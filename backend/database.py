@@ -1,11 +1,14 @@
 """SQLite persistence for simulation runs."""
 
 import json
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent / "solarkapitbahay.db"
+_DEFAULT = Path(__file__).parent / "solarkapitbahay.db"
+# Serverless hosts (Vercel) only allow writes under /tmp.
+DB_PATH = Path(os.getenv("DATABASE_PATH", str(_DEFAULT if not os.getenv("VERCEL") else "/tmp/solarkapitbahay.db")))
 
 
 def get_connection() -> sqlite3.Connection:
