@@ -1,13 +1,52 @@
 import React, { useState } from 'react';
+import { SunLogoIcon } from './components/icons/NavIcons';
 
-export default function Login() {
-  const [role, setRole] = useState('operator'); // tracks 'operator' or 'household'
+const demoAccounts = {
+  'operator@solarkapitbahay.com': {
+    role: 'operator',
+    name: 'Barangay Captain',
+    initials: 'BC',
+  },
+  'household@solarkapitbahay.com': {
+    role: 'household',
+    name: 'House A',
+    house: 'House A',
+    initials: 'HA',
+  },
+};
+
+export default function Login({ onSignIn }) {
+  const [role, setRole] = useState('operator');
+  const [email, setEmail] = useState('operator@solarkapitbahay.com');
+  const [password, setPassword] = useState('admin123');
+  const [error, setError] = useState('');
+
+  const handleOperatorSignIn = (e) => {
+    e.preventDefault();
+    const account = demoAccounts[email.trim().toLowerCase()];
+    if (account?.role === 'operator' && password === 'admin123') {
+      setError('');
+      onSignIn?.(account);
+      return;
+    }
+    setError('Invalid credentials. Try operator@solarkapitbahay.com / admin123');
+  };
+
+  const handleHouseholdRegister = (e) => {
+    e.preventDefault();
+    onSignIn?.({
+      role: 'household',
+      name: 'House A',
+      house: 'House A',
+      initials: 'HA',
+    });
+  };
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen w-full bg-[#F2ECE1]">
+    <div className="flex flex-col md:flex-row min-h-screen w-full bg-sk-canvas">
       
       {/* LEFT SIDE: HERO IMAGE & BRANDING */}
-      <div 
+      <div
         className="relative w-full md:w-1/2 min-h-[45vh] md:min-h-screen flex flex-col justify-end p-8 md:p-16 bg-cover bg-center text-white"
         style={{ backgroundImage: `url('/solarbackground.jpg')` }}
       >
@@ -17,16 +56,15 @@ export default function Login() {
         {/* Branding Content */}
         <div className="relative z-10 max-w-md">
           <div className="flex items-center gap-2 mb-6">
-            <svg className="w-8 h-8 text-amber-400" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zm0 8c-1.65 0-3-1.35-3-3s1.35-3 3-3 3 1.35 3 3-1.35 3-3 3zm0-10c.41 0 .75-.34.75-.75V3c0-.41-.34-.75-.75-.75s-.75.34-.75.75v1.25c0 .41.34.75.75.75zm0 14c-.41 0-.75.34-.75.75V21c0 .41.34.75.75.75s.75-.34.75-.75v-1.25c0-.41-.34-.75-.75-.75zm8.25-7.25h-1.25c-.41 0-.75.34-.75.75s.34.75.75.75h1.25c.41 0 .75-.34.75-.75s-.34-.75-.75-.75zM5 12c0-.41-.34-.75-.75-.75H3c-.41 0-.75.34-.75.75s.34.75.75.75h1.25c.41 0 .75-.34.75-.75zm13.22-6.22c-.3-.3-.77-.3-1.06 0l-.88.88c-.3.3-.3.77 0 1.06s.77.3 1.06 0l.88-.88c.3-.3.3-.77 0-1.06zm-11.31 11.31c-.3-.3-.77-.3-1.06 0l-.88.88c-.3.3-.3.77 0 1.06s.77.3 1.06 0l.88-.88c.3-.3.3-.77 0-1.06zm1.06-11.31c-.3-.3-.3-.77 0-1.06l.88-.88c.3-.3.77-.3 1.06 0s.3.77 0 1.06l-.88.88c-.3.3-.77.3-1.06 0zm11.31 11.31c-.3-.3-.3-.77 0-1.06l.88-.88c.3-.3.77-.3 1.06 0s.3.77 0 1.06l-.88.88c-.3.3-.77.3-1.06 0z" />
-            </svg>
+            <SunLogoIcon className="w-8 h-8 text-amber-400" />
             <h1 className="text-xl font-bold tracking-wide font-sans">
               Solar<span className="text-amber-400">KapitBahay</span>
             </h1>
           </div>
           
           <h2 className="text-4xl md:text-5xl font-semibold leading-tight font-serif mb-6 tracking-wide">
-            Sharing the sun, <br />together
+            Sharing the sun, <br />
+            together
           </h2>
           
           <div className="text-[11px] uppercase tracking-widest opacity-75 space-y-1 font-sans border-t border-white/20 pt-4">
@@ -40,81 +78,187 @@ export default function Login() {
       {/* RIGHT SIDE: LOGIN FORM */}
       <div className="w-full md:w-1/2 min-h-[55vh] md:min-h-screen flex flex-col justify-center items-center p-6 md:p-12">
         <div className="w-full max-w-sm">
-          
-          {/* Custom Role Selector Switch */}
-          <div className="flex bg-[#E5DDD0] p-1 rounded-xl border border-stone-400/30 mb-10 shadow-inner">
+          <div className="flex flex-col items-center mb-6">
+            <SunLogoIcon className="w-10 h-10 text-amber-500" />
+            <p className="mt-2 text-[11px] font-bold uppercase tracking-widest text-sk-ink-muted">
+              Solar
+            </p>
+            <p className="-mt-1 text-[11px] font-bold uppercase tracking-widest text-sk-ink-muted">
+              KapitBahay
+            </p>
+          </div>
+
+          {/* Role Selector (matches Figma: small rounded tabs) */}
+          <div className="flex bg-white/70 p-1 rounded-lg border border-sk-card-border/50 mb-8 shadow-inner">
             <button
               type="button"
               onClick={() => setRole('operator')}
-              className={`flex-1 py-2.5 text-xs uppercase tracking-wider font-semibold font-sans rounded-lg transition-all duration-300 ${
-                role === 'operator' 
-                  ? 'bg-white text-stone-900 shadow-md' 
-                  : 'text-stone-500 hover:text-stone-800'
+              className={`flex-1 py-1.5 text-[10px] uppercase tracking-widest font-bold rounded-md transition-colors ${
+                role === 'operator'
+                  ? 'bg-white text-sk-ink shadow-sm'
+                  : 'text-sk-ink-muted hover:text-sk-ink'
               }`}
             >
-              Barangay Operator
+              Operator Access
             </button>
             <button
               type="button"
               onClick={() => setRole('household')}
-              className={`flex-1 py-2.5 text-xs uppercase tracking-wider font-semibold font-sans rounded-lg transition-all duration-300 ${
-                role === 'household' 
-                  ? 'bg-white text-stone-900 shadow-md' 
-                  : 'text-stone-500 hover:text-stone-800'
+              className={`flex-1 py-1.5 text-[10px] uppercase tracking-widest font-bold rounded-md transition-colors ${
+                role === 'household'
+                  ? 'bg-white text-sk-ink shadow-sm'
+                  : 'text-sk-ink-muted hover:text-sk-ink'
               }`}
             >
               Household Member
             </button>
           </div>
 
-          {/* Dynamic Headers */}
-          <div className="mb-8">
-            <span className="text-[10px] uppercase tracking-widest text-stone-500 font-bold font-sans block mb-1">
-              {role === 'operator' ? 'Operator Access' : 'Resident Access'}
-            </span>
-            <h3 className="text-4xl text-stone-900 font-medium font-serif leading-tight">
-              Welcome online, <br />
-              <span className="text-emerald-800 italic font-semibold">
-                {role === 'operator' ? 'operator.' : 'member.'}
-              </span>
-            </h3>
-          </div>
+          {role === 'operator' ? (
+            <>
+              <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-sk-ink-muted mb-2">
+                Operator Access
+              </p>
+              <h3 className="font-serif text-3xl text-sk-ink leading-tight mb-8">
+                Welcome online,
+                <br />
+                <span className="italic font-semibold">operator.</span>
+              </h3>
 
-          {/* Inputs Form */}
-          <form className="space-y-5 font-sans" onSubmit={(e) => e.preventDefault()}>
-            <div>
-              <label className="block text-[11px] uppercase tracking-wider text-stone-500 font-bold mb-2">
-                Username
-              </label>
-              <input 
-                type="text" 
-                placeholder="Enter your username"
-                className="w-full px-4 py-3 rounded-xl border border-stone-400/50 bg-white text-stone-800 focus:outline-none focus:ring-2 focus:ring-emerald-800/40 focus:border-emerald-800 transition shadow-sm placeholder:text-stone-400"
-              />
-            </div>
+              <form className="space-y-5" onSubmit={handleOperatorSignIn}>
+                <div className="space-y-2">
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-sk-ink-muted">
+                    Username
+                  </label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full h-10 rounded-md border border-sk-card-border/60 bg-white px-3 text-sm text-sk-ink focus:outline-none focus:ring-2 focus:ring-sk-run/30"
+                  />
+                </div>
 
-            <div>
-              <label className="block text-[11px] uppercase tracking-wider text-stone-500 font-bold mb-2">
-                Password
-              </label>
-              <input 
-                type="password" 
-                placeholder="••••••••"
-                className="w-full px-4 py-3 rounded-xl border border-stone-400/50 bg-white text-stone-800 focus:outline-none focus:ring-2 focus:ring-emerald-800/40 focus:border-emerald-800 transition shadow-sm placeholder:text-stone-400"
-              />
-            </div>
+                <div className="space-y-2">
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-sk-ink-muted">
+                    Password
+                  </label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full h-10 rounded-md border border-sk-card-border/60 bg-white px-3 text-sm text-sk-ink focus:outline-none focus:ring-2 focus:ring-sk-run/30"
+                  />
+                </div>
 
-            <button 
-              type="submit" 
-              className="w-full py-3.5 mt-4 bg-emerald-800 text-white font-medium text-sm tracking-wide rounded-xl hover:bg-emerald-900 active:scale-[0.99] transition-all duration-200 shadow-md shadow-emerald-900/10"
-            >
-              Sign in to Dashboard
-            </button>
-          </form>
+                {error && (
+                  <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-md px-3 py-2">
+                    {error}
+                  </p>
+                )}
 
+                <p className="text-[10px] text-sk-ink-muted bg-sk-placeholder/40 rounded-md px-3 py-2">
+                  Demo: operator@solarkapitbahay.com / admin123
+                </p>
+
+                <button
+                  type="submit"
+                  className="w-full h-11 rounded-md bg-sk-run text-white text-sm font-semibold hover:bg-sk-run-hover transition-colors shadow-md shadow-emerald-950/15"
+                >
+                  Sign in to Dashboard
+                </button>
+              </form>
+            </>
+          ) : (
+            <>
+              <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-sk-ink-muted mb-2">
+                Household Access
+              </p>
+              <h3 className="font-serif text-3xl text-sk-ink leading-tight mb-6">
+                Register your,
+                <br />
+                <span className="italic font-semibold">energy data.</span>
+              </h3>
+
+              <form className="space-y-4" onSubmit={handleHouseholdRegister}>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Email" />
+                  <Field label="Name" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Password" type="password" />
+                  <Field label="Address" />
+                </div>
+
+                <div className="flex items-center justify-between gap-3 mt-2">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-sk-ink-muted">
+                    Battery Information
+                  </p>
+                  <div className="flex gap-2">
+                    <Dot active label="Has battery" />
+                    <Dot label="No batteries" />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <SmallPillInput placeholder="Battery information" />
+                  <SmallPillInput placeholder="Battery information" />
+                  <SmallPillInput placeholder="Battery information" />
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full h-11 rounded-md bg-sk-run text-white text-sm font-semibold hover:bg-sk-run-hover transition-colors shadow-md shadow-emerald-950/15 mt-2"
+                >
+                  Register Household
+                </button>
+              </form>
+            </>
+          )}
         </div>
       </div>
 
     </div>
+  );
+}
+
+function Field({ label, type = 'text' }) {
+  return (
+    <div className="space-y-1.5">
+      <label className="block text-[10px] font-bold uppercase tracking-widest text-sk-ink-muted">
+        {label}
+      </label>
+      <input
+        type={type}
+        className="w-full h-9 rounded-md border border-sk-card-border/60 bg-white px-3 text-sm text-sk-ink focus:outline-none focus:ring-2 focus:ring-sk-run/30"
+      />
+    </div>
+  );
+}
+
+function SmallPillInput({ placeholder }) {
+  return (
+    <input
+      type="text"
+      placeholder={placeholder}
+      className="w-full h-9 rounded-full border border-sk-card-border/50 bg-white/70 px-4 text-sm text-sk-ink placeholder:text-sk-ink-muted/70 focus:outline-none focus:ring-2 focus:ring-sk-run/25"
+    />
+  );
+}
+
+function Dot({ active = false, label }) {
+  return (
+    <button
+      type="button"
+      className="flex items-center gap-1.5"
+      aria-pressed={active}
+      title={label}
+    >
+      <span
+        className={`w-3 h-3 rounded-full border ${
+          active ? 'bg-sk-accent border-sk-accent' : 'bg-transparent border-sk-card-border'
+        }`}
+        aria-hidden
+      />
+    </button>
   );
 }

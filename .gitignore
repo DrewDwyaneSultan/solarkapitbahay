@@ -3,3 +3,7 @@ dist/
 .env
 *.log
 .vscode/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/*.db
+backend/solarkapitbahay.db

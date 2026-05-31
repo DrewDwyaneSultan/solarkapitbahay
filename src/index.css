@@ -1,3 +1,44 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+@config '../tailwind.config.js';
+
+@layer base {
+  body {
+    @apply antialiased;
+  }
+}
+
+/* Range inputs — matches Figma track/thumb */
+.sk-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 9999px;
+  background: linear-gradient(
+    to right,
+    #5a8f5c 0%,
+    #5a8f5c var(--pct, 50%),
+    #d4c9b8 var(--pct, 50%),
+    #d4c9b8 100%
+  );
+}
+
+.sk-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #faf6ef;
+  border: 2px solid #8b7355;
+  box-shadow: 0 1px 3px rgb(44 31 26 / 25%);
+  cursor: pointer;
+}
+
+.sk-range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #faf6ef;
+  border: 2px solid #8b7355;
+  box-shadow: 0 1px 3px rgb(44 31 26 / 25%);
+  cursor: pointer;
+}
