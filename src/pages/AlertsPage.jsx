@@ -15,7 +15,7 @@ const initialAlerts = [
     id: 'AL-002',
     kind: 'info',
     title: 'Simulation completed',
-    message: 'Greedy simulation ran successfully with current parameters.',
+    message: 'Hybrid simulation ran successfully with current parameters.',
     at: 'Today · 2:08 PM',
     ack: false,
   },
@@ -49,7 +49,6 @@ export default function AlertsPage() {
   }, [active, kind]);
 
   const ackAlert = (id) => setAlerts((rows) => rows.map((a) => (a.id === id ? { ...a, ack: true } : a)));
-  const dismissAlert = (id) => setAlerts((rows) => rows.filter((a) => a.id !== id));
   const markAllRead = () => setAlerts((rows) => rows.map((a) => ({ ...a, ack: true })));
 
   return (
@@ -95,7 +94,6 @@ export default function AlertsPage() {
                   <th className="text-left py-2">Time</th>
                   <th className="text-left py-2">Severity</th>
                   <th className="text-left py-2">Message</th>
-                  <th className="text-right py-2">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -104,11 +102,6 @@ export default function AlertsPage() {
                     <td className="py-2 font-mono text-xs">{a.at}</td>
                     <td className="py-2">{toneStyles(a.kind).label}</td>
                     <td className="py-2">{a.title}</td>
-                    <td className="py-2 text-right">
-                      <button type="button" onClick={() => dismissAlert(a.id)} className="text-xs text-sk-ink-muted underline">
-                        Dismiss
-                      </button>
-                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -145,20 +138,25 @@ function countKind(rows, kind, ack) {
 function AlertRow({ alert, onAck }) {
   const tone = toneStyles(alert.kind);
   return (
-    <div className={`rounded-2xl border p-4 ${tone.bg}`}>
+    <div className={`rounded-2xl border-2 p-4 shadow-sm ${tone.bg}`}>
       <div className="flex items-start justify-between gap-4">
-        <div>
-          <span className={`inline-flex text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${tone.chip}`}>
-            {tone.label}
+        <div className="flex gap-3">
+          <span className="text-2xl shrink-0" aria-hidden>
+            {tone.emoji}
           </span>
-          <p className="mt-2 font-semibold text-sk-ink">{alert.title}</p>
-          <p className="text-sm text-sk-ink-muted mt-1">{alert.message}</p>
-          <p className="text-[10px] uppercase tracking-widest text-sk-ink-muted mt-2">{alert.at}</p>
+          <div>
+            <span className={`inline-flex text-[10px] font-bold uppercase px-2.5 py-1 rounded-full border ${tone.chip}`}>
+              {tone.label}
+            </span>
+            <p className="mt-2 font-bold text-sk-ink text-base">{alert.title}</p>
+            <p className="text-sm text-sk-ink mt-1">{alert.message}</p>
+            <p className="text-[10px] uppercase tracking-widest text-sk-ink-muted/80 mt-2 font-semibold">{alert.at}</p>
+          </div>
         </div>
         <button
           type="button"
           onClick={onAck}
-          className="h-9 px-3 rounded-md border border-sk-card-border/70 bg-white text-xs font-semibold shrink-0"
+          className="h-9 px-3 rounded-md bg-white border-2 border-sk-card-border text-xs font-bold shrink-0 hover:bg-sk-placeholder/30"
         >
           Acknowledge
         </button>
@@ -170,24 +168,39 @@ function AlertRow({ alert, onAck }) {
 function toneStyles(kind) {
   switch (kind) {
     case 'danger':
-      return { label: 'Critical', chip: 'bg-rose-50 text-rose-900 border-rose-200', bg: 'bg-rose-50/50 border-rose-200' };
+      return {
+        label: 'Critical',
+        emoji: '🚨',
+        chip: 'bg-rose-200 text-rose-950 border-rose-400',
+        bg: 'bg-rose-100 border-rose-400',
+      };
     case 'warning':
-      return { label: 'Warning', chip: 'bg-amber-50 text-amber-900 border-amber-200', bg: 'bg-amber-50/50 border-amber-200' };
+      return {
+        label: 'Warning',
+        emoji: '⚠️',
+        chip: 'bg-amber-200 text-amber-950 border-amber-400',
+        bg: 'bg-amber-100 border-amber-400',
+      };
     default:
-      return { label: 'Info', chip: 'bg-emerald-50 text-emerald-900 border-emerald-200', bg: 'bg-white/60 border-sk-card-border/40' };
+      return {
+        label: 'Info',
+        emoji: 'ℹ️',
+        chip: 'bg-sky-200 text-sky-950 border-sky-400',
+        bg: 'bg-sky-50 border-sky-300',
+      };
   }
 }
 
 function MiniStat({ label, value, tone }) {
   const toneMap = {
-    danger: 'bg-rose-50 text-rose-900 border-rose-200',
-    warning: 'bg-amber-50 text-amber-900 border-amber-200',
-    info: 'bg-emerald-50 text-emerald-900 border-emerald-200',
+    danger: 'bg-rose-100 text-rose-950 border-rose-300',
+    warning: 'bg-amber-100 text-amber-950 border-amber-300',
+    info: 'bg-sky-100 text-sky-950 border-sky-300',
   };
   return (
-    <div className={`rounded-xl border p-3 ${toneMap[tone]}`}>
-      <p className="text-[10px] font-bold uppercase tracking-widest opacity-80">{label}</p>
-      <p className="mt-1 text-xl font-semibold tabular-nums">{value}</p>
+    <div className={`rounded-xl border-2 p-3 ${toneMap[tone]}`}>
+      <p className="text-[10px] font-bold uppercase tracking-widest opacity-90">{label}</p>
+      <p className="mt-1 text-xl font-bold tabular-nums">{value}</p>
     </div>
   );
 }

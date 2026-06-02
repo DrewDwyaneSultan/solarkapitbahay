@@ -9,7 +9,7 @@ export default function SettingsPage() {
   const [port, setPort] = useState('1883');
   const [autoDisc, setAutoDisc] = useState(true);
   const [emailNotif, setEmailNotif] = useState(true);
-  const [battLow, setBattLow] = useState(20);
+  const [battLow, setBattLow] = useState('20');
   const [saved, setSaved] = useState(false);
 
   const doSave = () => {
@@ -40,7 +40,14 @@ export default function SettingsPage() {
           <div className="space-y-4">
             <Field label="Barangay Name" value={barangayName} onChange={setBarangayName} />
             <Field label="Operator Email" value={contactEmail} onChange={setContactEmail} />
-            <Field label="Battery Low Threshold (%)" value={battLow} onChange={(v) => setBattLow(Number(v))} type="number" />
+            <Field
+              label="Battery Low Threshold (%)"
+              value={battLow}
+              onChange={setBattLow}
+              type="number"
+              min={1}
+              max={100}
+            />
           </div>
         </Card>
 
@@ -75,13 +82,15 @@ export default function SettingsPage() {
   );
 }
 
-function Field({ label, value, onChange, type = 'text' }) {
+function Field({ label, value, onChange, type = 'text', min, max }) {
   return (
     <div>
       <label className="block text-[10px] font-bold uppercase tracking-widest text-sk-ink-muted mb-1.5">{label}</label>
       <input
         type={type}
         value={value}
+        min={min}
+        max={max}
         onChange={(e) => onChange(e.target.value)}
         className="w-full h-10 rounded-md border border-sk-card-border/60 bg-white px-3 text-sm"
       />

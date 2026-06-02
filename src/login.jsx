@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { SunLogoIcon } from './components/icons/NavIcons';
+import Toggle from './components/ui/Toggle';
 
 const demoAccounts = {
   'operator@solarkapitbahay.com': {
@@ -20,6 +21,10 @@ export default function Login({ onSignIn }) {
   const [email, setEmail] = useState('operator@solarkapitbahay.com');
   const [password, setPassword] = useState('admin123');
   const [error, setError] = useState('');
+  const [hasSolar, setHasSolar] = useState(false);
+  const [hasBattery, setHasBattery] = useState(false);
+  const [batteryModel, setBatteryModel] = useState('');
+  const [batteryCapacity, setBatteryCapacity] = useState('');
 
   const handleOperatorSignIn = (e) => {
     e.preventDefault();
@@ -189,21 +194,40 @@ export default function Login({ onSignIn }) {
                   <Field label="Address" />
                 </div>
 
-                <div className="flex items-center justify-between gap-3 mt-2">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-sk-ink-muted">
-                    Battery Information
-                  </p>
-                  <div className="flex gap-2">
-                    <Dot active label="Has battery" />
-                    <Dot label="No batteries" />
+                <div className="rounded-xl border border-sk-card-border/40 bg-white/50 p-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-sk-ink">Solar panel installed</p>
+                      <p className="text-xs text-sk-ink-muted">Household can export surplus energy</p>
+                    </div>
+                    <Toggle on={hasSolar} onChange={setHasSolar} label="Has solar panel" />
+                  </div>
+                  <div className="flex items-center justify-between border-t border-sk-card-border/30 pt-4">
+                    <div>
+                      <p className="text-sm font-semibold text-sk-ink">Battery installed</p>
+                      <p className="text-xs text-sk-ink-muted">Enable to enter battery details</p>
+                    </div>
+                    <Toggle on={hasBattery} onChange={setHasBattery} label="Has battery" />
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <SmallPillInput placeholder="Battery information" />
-                  <SmallPillInput placeholder="Battery information" />
-                  <SmallPillInput placeholder="Battery information" />
-                </div>
+                {hasBattery && (
+                  <div className="space-y-2 rounded-xl border border-amber-200/60 bg-amber-50/40 p-4">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-sk-ink-muted mb-2">
+                      Battery information
+                    </p>
+                    <SmallPillInput
+                      placeholder="Battery model (e.g. LiFePO4 5kWh)"
+                      value={batteryModel}
+                      onChange={setBatteryModel}
+                    />
+                    <SmallPillInput
+                      placeholder="Capacity (kWh)"
+                      value={batteryCapacity}
+                      onChange={setBatteryCapacity}
+                    />
+                  </div>
+                )}
 
                 <button
                   type="submit"
@@ -235,30 +259,14 @@ function Field({ label, type = 'text' }) {
   );
 }
 
-function SmallPillInput({ placeholder }) {
+function SmallPillInput({ placeholder, value = '', onChange }) {
   return (
     <input
       type="text"
       placeholder={placeholder}
+      value={value}
+      onChange={(e) => onChange?.(e.target.value)}
       className="w-full h-9 rounded-full border border-sk-card-border/50 bg-white/70 px-4 text-sm text-sk-ink placeholder:text-sk-ink-muted/70 focus:outline-none focus:ring-2 focus:ring-sk-run/25"
     />
-  );
-}
-
-function Dot({ active = false, label }) {
-  return (
-    <button
-      type="button"
-      className="flex items-center gap-1.5"
-      aria-pressed={active}
-      title={label}
-    >
-      <span
-        className={`w-3 h-3 rounded-full border ${
-          active ? 'bg-sk-accent border-sk-accent' : 'bg-transparent border-sk-card-border'
-        }`}
-        aria-hidden
-      />
-    </button>
   );
 }

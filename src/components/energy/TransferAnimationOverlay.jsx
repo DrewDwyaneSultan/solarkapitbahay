@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 
-export default function TransferAnimationOverlay({ from, to, amount, onComplete }) {
+export default function TransferAnimationOverlay({ from, to, amount, onComplete, onClose }) {
   const [phase, setPhase] = useState('charging');
 
   useEffect(() => {
@@ -17,12 +17,21 @@ export default function TransferAnimationOverlay({ from, to, amount, onComplete 
   const isBattery = to === 'Community Battery';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-sk-ink/50 backdrop-blur-sm animate-in fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-sk-ink/50 backdrop-blur-sm">
       <div
-        className={`w-full max-w-lg mx-4 rounded-2xl bg-sk-card border-2 p-8 text-center shadow-xl ${
+        className={`relative w-full max-w-lg mx-4 rounded-2xl bg-sk-card border-2 p-8 text-center shadow-xl ${
           phase === 'success' ? 'border-emerald-600' : 'border-sk-accent'
         }`}
       >
+        <button
+          type="button"
+          onClick={() => (onClose ? onClose() : onComplete())}
+          className="absolute top-3 right-3 w-9 h-9 rounded-full border border-sk-card-border/60 bg-white text-sk-ink-muted hover:text-sk-ink hover:bg-sk-placeholder/50 text-lg leading-none"
+          aria-label="Close transfer dialog"
+        >
+          ×
+        </button>
+
         {phase !== 'success' ? (
           <>
             <h3 className="font-serif text-xl font-semibold text-sk-ink">
@@ -48,6 +57,13 @@ export default function TransferAnimationOverlay({ from, to, amount, onComplete 
                 style={{ width: phase === 'charging' ? '30%' : '100%' }}
               />
             </div>
+            <button
+              type="button"
+              onClick={() => (onClose ? onClose() : onComplete())}
+              className="mt-6 text-sm font-semibold text-sk-ink-muted underline hover:text-sk-ink"
+            >
+              Cancel transfer
+            </button>
           </>
         ) : (
           <>
@@ -58,7 +74,13 @@ export default function TransferAnimationOverlay({ from, to, amount, onComplete 
             <p className="mt-2 text-sm text-sk-ink-muted">
               Routed <strong>{amount}W</strong> from <strong>{from}</strong> to <strong>{to}</strong>
             </p>
-            <p className="mt-4 text-xs text-sk-ink-muted">Automation resumes in 5 minutes</p>
+            <button
+              type="button"
+              onClick={onComplete}
+              className="mt-6 h-10 px-6 rounded-xl bg-sk-run text-white text-sm font-semibold hover:bg-sk-run-hover"
+            >
+              Close
+            </button>
           </>
         )}
       </div>

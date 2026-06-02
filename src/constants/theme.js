@@ -21,5 +21,9 @@ export const colors = {
 
 export const simulationDefaults = {
   households: { min: 5, max: 100, value: 50 },
-  batteryCapacity: { min: 5, max: 100, value: 25, unit: 'kWh' },
+  batteryCapacity: { min: 10, max: 200, value: 25, unit: 'kWh' },
+  minSoc: { min: 10, max: 50, value: 20 },
+  maxSoc: { min: 70, max: 100, value: 90 },
+  peakTariff: 15.0,
+  durationDays: 30,
 };

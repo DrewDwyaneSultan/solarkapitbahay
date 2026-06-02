@@ -19,7 +19,10 @@ export default function HouseholdLayout({
               <SunLogoIcon className="w-7 h-7 text-amber-500" />
             </div>
             <div>
-              <p className="font-serif text-2xl font-semibold leading-tight">{barangayName}</p>
+              <p className="font-serif text-lg font-semibold leading-tight">
+                Solar<span className="text-amber-600">KapitBahay</span>
+              </p>
+              <p className="text-sm text-black/70 mt-0.5">{barangayName}</p>
               <p className="text-[11px] uppercase tracking-widest text-black/55">
                 {householdCode}
               </p>

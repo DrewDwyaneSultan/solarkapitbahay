@@ -15,10 +15,10 @@ export default function DashboardPage({ operatorName = 'Barangay Operator' }) {
   const hourLabels = ['6PM', '7PM', '8PM', '9PM'];
 
   const stats = [
-    { id: 'savings', label: 'Total Savings', value: `₱${data.savings.toLocaleString()}`, bgKey: 'savings' },
-    { id: 'grid', label: 'Grid Reduction', value: `${data.gridRed}%`, bgKey: 'grid' },
-    { id: 'gini', label: 'Fairness Score', value: String(data.gini), bgKey: 'battery' },
-    { id: 'co2', label: 'CO₂ Offset', value: `${data.co2} kg`, bgKey: 'solar' },
+    { id: 'savings', label: 'Total Savings', value: `₱${data.savings.toLocaleString()}`, bgKey: 'savings', icon: '💰' },
+    { id: 'grid', label: 'Grid Reduction', value: `${data.gridRed}%`, bgKey: 'grid', icon: '⚡' },
+    { id: 'gini', label: 'Fairness Score', value: String(data.gini), bgKey: 'battery', icon: '⚖️' },
+    { id: 'co2', label: 'CO₂ Offset', value: `${data.co2} kg`, bgKey: 'solar', icon: '🌱' },
   ];
 
   return (
@@ -40,16 +40,16 @@ export default function DashboardPage({ operatorName = 'Barangay Operator' }) {
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {stats.map((stat) => (
-          <StatTile key={stat.id} label={stat.label} value={stat.value} bgKey={stat.bgKey} />
+          <StatTile key={stat.id} label={stat.label} value={stat.value} bgKey={stat.bgKey} icon={stat.icon} />
         ))}
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        <Card className="xl:col-span-1">
-          <BatteryOrganism data={data} />
-        </Card>
+      <Card title="Community Battery — Live Snapshot">
+        <BatteryOrganism data={data} />
+      </Card>
 
-        <Card title="Savings Over Time" className="xl:col-span-1">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <Card title="Savings Over Time">
           <div className="flex justify-end gap-1 mb-3">
             {['week', 'month'].map((p) => (
               <button
@@ -68,7 +68,7 @@ export default function DashboardPage({ operatorName = 'Barangay Operator' }) {
           <p className="text-xs text-emerald-800 mt-2 font-semibold">Total this week: ₱680 (+32%)</p>
         </Card>
 
-        <Card title="Peak Hour Savings" className="xl:col-span-1">
+        <Card title="Peak Hour Savings">
           <p className="text-xs text-sk-ink-muted mb-3">6 PM – 9 PM · Avoided ₱15/kWh peak</p>
           <SimpleDualBarChart withoutData={hourWithout} withData={hourWith} labels={hourLabels} />
         </Card>
