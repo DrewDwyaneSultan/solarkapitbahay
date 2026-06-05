@@ -1,7 +1,7 @@
 """
-FastAPI backend for SolarKapitBahay — Sprint 8 (unfinished testing increment).
+FastAPI backend for SolarKapitBahay.
 
-Greedy + SQLite only. LP, Hybrid, TOPSIS, auth, and MQTT not implemented yet.
+Production algorithm: Greedy (Colab/TOPSIS winner). LP and Hybrid planned later.
 """
 
 import os
@@ -13,8 +13,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from algorithms.greedy import simulate_greedy
-from data_generator import generate_households
-from database import get_run, init_db, list_runs, save_run
+from clustering import get_household_cluster, run_clustering
+from config import SIM_DAYS_DEFAULT
+from database import (
+    db_status,
+    get_active_dataset,
+    get_household,
+    get_run,
+    household_count,
+    init_db,
+    list_households,
+    list_runs,
+    save_run,
+    seed_database,
+)
 
 # On Vercel Services, routePrefix "/api" is stripped before the request hits FastAPI.
 # Locally (and on Render), routes keep the "/api" prefix to match the Vite proxy.
@@ -40,18 +52,21 @@ router = APIRouter()
 
 class SimulationRequest(BaseModel):
     households: int = Field(ge=5, le=100, default=50)
-    battery_capacity_kwh: float = Field(ge=5, le=100, default=25)
+    battery_capacity_kwh: float = Field(ge=5, le=200, default=100)
+    simulation_days: int = Field(ge=7, le=90, default=SIM_DAYS_DEFAULT)
+    seed: int = Field(default=42, ge=0)
     algorithm: Literal["greedy"] = "greedy"
 
 
 @app.on_event("startup")
 def on_startup() -> None:
     init_db()
+    seed_database()
 
 
 @router.get("/health")
 def health() -> dict:
-    return {"status": "ok", "service": "solarkapitbahay-api"}
+    return {"status": "ok", "service": "solarkapitbahay-api", **db_status()}
 
 
 @router.post("/simulation/run")
@@ -59,10 +74,17 @@ def run_simulation(body: SimulationRequest) -> dict:
     started = time.perf_counter()
 
     if body.algorithm != "greedy":
-        raise HTTPException(status_code=501, detail="Only greedy is implemented in this increment.")
+        raise HTTPException(
+            status_code=501,
+            detail="Only greedy is implemented. LP and hybrid are planned for a future comparison run.",
+        )
 
-    hh_data = generate_households(body.households)
-    results = simulate_greedy(hh_data, body.battery_capacity_kwh)
+    results = simulate_greedy(
+        num_households=body.households,
+        battery_capacity_kwh=body.battery_capacity_kwh,
+        days=body.simulation_days,
+        seed=body.seed,
+    )
     execution_ms = round((time.perf_counter() - started) * 1000, 2)
 
     run_id = save_run(
@@ -93,6 +115,43 @@ def simulation_run_detail(run_id: int) -> dict:
     if not row:
         raise HTTPException(status_code=404, detail="Run not found.")
     return row
+
+
+@router.get("/clustering")
+def clustering_overview() -> dict:
+    """K-means on merged CSV — charge/discharge indicators for all households."""
+    return run_clustering()
+
+
+@router.get("/clustering/{household_id}")
+def clustering_household(household_id: str) -> dict:
+    row = get_household_cluster(household_id)
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Household {household_id} not found in dataset.")
+    return row
+
+
+@router.get("/households")
+def households_list() -> dict:
+    """All households from the seeded database."""
+    return {"households": list_households(), "count": household_count()}
+
+
+@router.get("/households/{household_id}")
+def household_detail(household_id: str) -> dict:
+    row = get_household(household_id)
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Household {household_id} not found.")
+    return row
+
+
+@router.get("/dataset")
+def dataset_overview() -> dict:
+    """Active imported dataset metadata."""
+    row = get_active_dataset()
+    if not row:
+        raise HTTPException(status_code=404, detail="No dataset seeded. Run: python seed_db.py")
+    return dict(row)
 
 
 app.include_router(router, prefix=API_PREFIX)
