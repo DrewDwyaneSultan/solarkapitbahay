@@ -1,5 +1,6 @@
 import React from 'react';
-import { SunLogoIcon, NavIcon } from '../../components/icons/NavIcons';
+import BrandLogo from '../../components/BrandLogo';
+import { NavIcon } from '../../components/icons/NavIcons';
 import { householdMemberNav } from '../../constants/mockSimulation';
 
 export default function HouseholdLayout({
@@ -15,13 +16,10 @@ export default function HouseholdLayout({
       <header className="px-6 pt-5">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-3">
-            <div className="w-12 h-12 rounded-full bg-white/60 border border-black/10 flex items-center justify-center">
-              <SunLogoIcon className="w-7 h-7 text-amber-500" />
+            <div className="rounded-xl bg-white p-1.5 border border-black/10 shadow-sm">
+              <BrandLogo className="h-14 w-auto" />
             </div>
             <div>
-              <p className="font-serif text-lg font-semibold leading-tight">
-                Solar<span className="text-amber-600">KapitBahay</span>
-              </p>
               <p className="text-sm text-black/70 mt-0.5">{barangayName}</p>
               <p className="text-[11px] uppercase tracking-widest text-black/55">
                 {householdCode}

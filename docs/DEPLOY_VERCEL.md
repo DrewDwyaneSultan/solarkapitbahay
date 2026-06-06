@@ -26,13 +26,21 @@ https://your-app.vercel.app/api/health → FastAPI backend
 
 Supabase dashboard → open your project → **Connect** (top button)
 
-Copy **Direct connection** URI (port `5432`):
+**For Vercel:** use **Session pooler** or **Transaction pooler** — **not** Direct connection.
+
+| Type | Works on Vercel? |
+|------|------------------|
+| Direct (`db.xxx.supabase.co:5432`) | Often **no** (IPv6 / "Cannot assign requested address") |
+| Session pooler (`pooler.supabase.com:5432`) | **Yes** |
+| Transaction pooler (`pooler.supabase.com:6543`) | **Yes** (recommended for serverless) |
+
+Example (Transaction pooler — copy yours from Supabase):
 
 ```
-postgresql://postgres:YOUR_PASSWORD@db.xxxxx.supabase.co:5432/postgres
+postgresql://postgres.grqkeswrzxvxesofpbjc:YOUR_PASSWORD@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres
 ```
 
-You need this for Step 3. Without it, the API runs but data resets on every deploy.
+Use your **database password** (not your Supabase login). Region/host come from the Connect panel.
 
 ---
 
@@ -51,15 +59,17 @@ You need this for Step 3. Without it, the API runs but data resets on every depl
 
 ---
 
-## Step 3 — Environment variable on Vercel
+## Step 3 — Environment variables on Vercel
 
-Before deploying, add:
+Copy from [`.env.example`](../.env.example) in the repo root:
 
-| Key | Value | Applies to |
-|-----|-------|------------|
-| `DATABASE_URL` | Your Supabase URI | All / Production |
+1. Locally: `copy .env.example .env` and fill in `DATABASE_URL`
+2. Vercel: **Settings → Environment Variables** — add the same keys
 
-**Settings → Environment Variables → Add**
+| Key | Vercel value |
+|-----|----------------|
+| `DATABASE_URL` | Your Supabase URI (required) |
+| `VITE_API_URL` | Leave **empty** (same-domain `/api`) |
 
 Then click **Deploy**.
 
@@ -84,6 +94,7 @@ Demo login: `operator@solarkapitbahay.com` / `admin123`
 | No **Services** preset | Your Vercel account may need Services access — try updating Vercel CLI or contact Vercel; fallback: frontend-only on Vercel + free [Railway](https://railway.app) or [Fly.io](https://fly.io) for API |
 | Build fails on FastAPI | Check deploy logs; ensure `backend/requirements.txt` and `backend/pyproject.toml` are committed |
 | `households: 0` | `DATABASE_URL` missing or wrong; check Supabase password (URL-encode special chars) |
+| `Cannot assign requested address` / IPv6 | Use **pooler** URI from Supabase Connect, not Direct `db.xxx.supabase.co` |
 | Seed error | Ensure `data/csvmerged2 (1).txt` is committed and pushed to GitHub |
 | API 404 | Framework must be **Services**, not plain Vite |
 

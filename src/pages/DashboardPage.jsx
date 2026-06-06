@@ -4,10 +4,13 @@ import StatTile from '../components/ui/StatTile';
 import BatteryOrganism from '../components/energy/BatteryOrganism';
 import SimpleLineChart from '../components/charts/SimpleLineChart';
 import SimpleDualBarChart from '../components/charts/SimpleDualBarChart';
+import ClusterScatterPlot from '../components/clustering/ClusterScatterPlot';
+import { useClustering } from '../hooks/useClustering';
 import { useLiveData } from '../hooks/useLiveData';
 
 export default function DashboardPage({ operatorName = 'Barangay Operator' }) {
   const data = useLiveData();
+  const { data: clusterData, loading: clusterLoading, error: clusterError } = useClustering();
   const [chartPeriod, setChartPeriod] = useState('week');
   const savingsData = [20, 35, 45, 60, 80, 110, 140];
   const hourWithout = [8, 7, 6, 5];
@@ -44,8 +47,32 @@ export default function DashboardPage({ operatorName = 'Barangay Operator' }) {
         ))}
       </div>
 
-      <Card title="Community Battery — Live Snapshot">
+      <Card>
         <BatteryOrganism data={data} />
+      </Card>
+
+      <Card title="Battery Clustering — Charge / Discharge (merged dataset)">
+        <p className="text-xs text-sk-ink-muted mb-4">
+          K-means on <code className="text-[10px]">data/csvmerged2 (1).txt</code> (15 households
+          expanded from PVGIS hourly rows). Blue = charge, amber = discharge, gray = balanced.
+        </p>
+        {clusterError && (
+          <p className="text-sm text-rose-800 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 mb-3">
+            {clusterError} — start the backend with <code className="text-xs">npm run dev:backend</code>.
+          </p>
+        )}
+        {clusterLoading ? (
+          <p className="text-sm text-sk-ink-muted py-16 text-center">Loading clustering…</p>
+        ) : (
+          <>
+            <ClusterScatterPlot households={clusterData?.households ?? []} />
+            {clusterData?.summary && (
+              <p className="text-[10px] text-sk-ink-muted mt-3 text-center">
+                {clusterData.total_rows} CSV rows · {clusterData.households?.length} households clustered
+              </p>
+            )}
+          </>
+        )}
       </Card>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">

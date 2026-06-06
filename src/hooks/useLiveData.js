@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { resolveCircuit } from '../constants/circuits';
 
 function useInterval(callback, delay) {
   const saved = useRef(callback);
@@ -15,8 +16,7 @@ function useInterval(callback, delay) {
 const initial = {
   houseA: { solar: 180, load: 80, relay: true, name: 'House A' },
   houseB: { solar: 0, load: 150, relay: false, name: 'House B' },
-  houseC: { solar: 120, load: 60, relay: true, name: 'House C' },
-  battery: 45,
+  battery: 54,
   savings: 1250,
   gridRed: 32,
   gini: 0.18,
@@ -31,7 +31,6 @@ export function useLiveData() {
       ...d,
       houseA: { ...d.houseA, solar: 160 + Math.round(Math.random() * 40) },
       houseB: { ...d.houseB, load: 120 + Math.round(Math.random() * 60) },
-      houseC: { ...d.houseC, solar: 100 + Math.round(Math.random() * 40) },
       battery: Math.max(20, Math.min(95, d.battery + (Math.random() - 0.4) * 2)),
     }));
   }, 3000);
@@ -55,12 +54,15 @@ export function getHouseCards(data) {
       relay: data.houseB.relay,
       surplus: data.houseB.solar - data.houseB.load,
     },
-    {
-      name: data.houseC.name,
-      solar: data.houseC.solar,
-      load: data.houseC.load,
-      relay: data.houseC.relay,
-      surplus: data.houseC.solar - data.houseC.load,
-    },
   ];
+}
+
+export function getMemberHouse(data, householdId) {
+  const circuit = resolveCircuit(householdId);
+  return data[circuit.key];
+}
+
+export function getMemberSurplus(data, householdId) {
+  const house = getMemberHouse(data, householdId);
+  return house.solar - house.load;
 }

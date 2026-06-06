@@ -48,10 +48,6 @@ export default function EnergyTransferPage() {
     setRecipients((rows) => rows.map((r) => (r.id === id ? { ...r, amount: clamped } : r)));
   };
 
-  const addRecipient = () => {
-    setRecipients((rows) => [...rows, { id: Date.now(), house: 'House C', need: 120, amount: 50 }]);
-  };
-
   const removeRecipient = (id) => setRecipients((rows) => rows.filter((r) => r.id !== id));
 
   const doScan = () => {
@@ -122,7 +118,7 @@ export default function EnergyTransferPage() {
             <div className="flex items-center gap-3">
               <span className={`w-3 h-3 rounded-full ${autoMode ? 'bg-emerald-600 animate-pulse' : 'bg-stone-400'}`} />
               <div className="flex-1">
-                <p className="font-semibold text-sk-ink">Hybrid algorithm — automated routing</p>
+                <p className="font-semibold text-sk-ink">Greedy algorithm — automated routing</p>
                 <p className="text-xs text-sk-ink-muted">Next decision in {fmtCountdown(countdown)}</p>
               </div>
               <Toggle on={autoMode} onChange={setAutoMode} label="Automated mode" />
@@ -184,17 +180,12 @@ export default function EnergyTransferPage() {
                 </div>
               </Card>
 
-              <Card title="To (Recipients)" className="!shadow-none border-amber-200/60">
-                <button type="button" onClick={addRecipient} className="mb-3 h-8 px-3 rounded-md bg-amber-700 text-white text-xs font-semibold">
-                  + Add Recipient
-                </button>
+              <Card title="To (House B)" className="!shadow-none border-amber-200/60">
+                <p className="text-xs text-sk-ink-muted mb-3">Two-circuit setup — transfer targets the other house only.</p>
                 {recipients.map((r) => (
                   <div key={r.id} className="rounded-xl bg-white border border-amber-200/60 p-3 mb-2">
                     <div className="flex justify-between mb-2">
                       <p className="font-semibold text-sm">{r.house}</p>
-                      <button type="button" onClick={() => removeRecipient(r.id)} className="text-rose-700 text-xs font-bold">
-                        Remove
-                      </button>
                     </div>
                     <input
                       type="range"
@@ -239,8 +230,8 @@ export default function EnergyTransferPage() {
           </div>
         )}
 
-        <Card title="Household Energy Status">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card title="Circuit Status (House A & B)">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {houseCards.map((h) => (
               <HouseStatusCard key={h.name} house={h} />
             ))}

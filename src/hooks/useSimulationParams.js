@@ -13,24 +13,28 @@ export function useSimulationParams() {
   const [results, setResults] = useState(null);
   const [error, setError] = useState(null);
 
-  const runSimulation = useCallback(async () => {
-    setIsRunning(true);
-    setError(null);
-    try {
-      const data = await runSimulationApi({
-        households,
-        batteryCapacity,
-        algorithm,
-      });
-      setResults(data);
-      setLastRunAt(new Date());
-    } catch (err) {
-      setError(err.message ?? 'Simulation failed. Is the backend running?');
-      setResults(null);
-    } finally {
-      setIsRunning(false);
-    }
-  }, [households, batteryCapacity, algorithm]);
+  const runSimulation = useCallback(
+    async (simulationDays = 30) => {
+      setIsRunning(true);
+      setError(null);
+      try {
+        const data = await runSimulationApi({
+          households,
+          batteryCapacity,
+          simulationDays,
+          algorithm,
+        });
+        setResults(data);
+        setLastRunAt(new Date());
+      } catch (err) {
+        setError(err.message ?? 'Simulation failed. Is the backend running?');
+        setResults(null);
+      } finally {
+        setIsRunning(false);
+      }
+    },
+    [households, batteryCapacity, algorithm],
+  );
 
   return {
     households,

@@ -1,12 +1,18 @@
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
 
-export async function runSimulation({ households, batteryCapacity, algorithm = 'greedy' }) {
+export async function runSimulation({
+  households,
+  batteryCapacity,
+  simulationDays = 30,
+  algorithm = 'greedy',
+}) {
   const res = await fetch(`${API_BASE}/api/simulation/run`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       households,
       battery_capacity_kwh: batteryCapacity,
+      simulation_days: simulationDays,
       algorithm,
     }),
   });

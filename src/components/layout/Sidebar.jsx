@@ -1,6 +1,7 @@
 import React from 'react';
+import BrandLogo from '../BrandLogo';
 import { navItems } from '../../constants/mockSimulation';
-import { NavIcon, SunLogoIcon } from '../icons/NavIcons';
+import { NavIcon } from '../icons/NavIcons';
 
 function NavGroup({ title, items, activeId, onNavigate }) {
   return (
@@ -42,11 +43,8 @@ export default function Sidebar({ activePage, onNavigate, operator }) {
   return (
     <aside className="w-[220px] shrink-0 flex flex-col bg-sk-sidebar text-white min-h-screen">
       <div className="px-5 pt-6 pb-4 border-b border-sk-sidebar-border/50">
-        <div className="flex items-center gap-2">
-          <SunLogoIcon className="w-7 h-7 text-amber-400" />
-          <span className="font-serif text-base leading-tight tracking-wide">
-            Solar<span className="text-amber-400/90">KapitBahay</span>
-          </span>
+        <div className="rounded-xl bg-white/95 p-2 inline-block">
+          <BrandLogo className="h-11 w-auto" />
         </div>
       </div>
 

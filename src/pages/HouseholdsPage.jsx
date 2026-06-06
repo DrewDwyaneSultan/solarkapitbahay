@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import Card from '../components/ui/Card';
 import Toast from '../components/ui/Toast';
+import { BatteryActionChip } from '../components/clustering/BatteryActionIndicator';
+import { useClustering } from '../hooks/useClustering';
 import { householdRows } from '../constants/mockSimulation';
 
 const pendingRegs = [
@@ -10,6 +12,15 @@ const pendingRegs = [
 ];
 
 export default function HouseholdsPage() {
+  const { data: clusterData } = useClustering();
+  const actionById = useMemo(() => {
+    const map = {};
+    (clusterData?.households ?? []).forEach((h) => {
+      map[h.household_id] = h;
+    });
+    return map;
+  }, [clusterData]);
+
   const [rows, setRows] = useState(householdRows);
   const [regs, setRegs] = useState(pendingRegs);
   const [query, setQuery] = useState('');
@@ -104,6 +115,7 @@ export default function HouseholdsPage() {
                   <th className="text-left py-2">Address</th>
                   <th className="text-left py-2">Solar</th>
                   <th className="text-left py-2">Battery</th>
+                  <th className="text-left py-2">Cluster</th>
                   <th className="text-left py-2">Status</th>
                   <th className="text-right py-2">Actions</th>
                 </tr>
@@ -119,6 +131,16 @@ export default function HouseholdsPage() {
                     </td>
                     <td className="py-3">
                       <YesNoChip yes={r.hasBattery} />
+                    </td>
+                    <td className="py-3">
+                      {actionById[r.id] ? (
+                        <BatteryActionChip
+                          action={actionById[r.id].action}
+                          label={actionById[r.id].action_label}
+                        />
+                      ) : (
+                        <span className="text-xs text-sk-ink-muted">—</span>
+                      )}
                     </td>
                     <td className="py-3">
                       <StatusChip status={r.status} />
@@ -193,8 +215,21 @@ export default function HouseholdsPage() {
                 <DetailRow label="Solar" value={selected.hasSolar ? 'Yes' : 'No'} />
                 <DetailRow label="Battery" value={selected.hasBattery ? 'Yes' : 'No'} />
                 <DetailRow label="Status" value={selected.status} />
+                {actionById[selected.id] && (
+                  <>
+                    <DetailRow label="Cluster action" value={actionById[selected.id].action_label} />
+                    <DetailRow
+                      label="Net load (avg)"
+                      value={`${actionById[selected.id].net_load_kwh} kWh`}
+                    />
+                    <DetailRow
+                      label="SOC (avg)"
+                      value={`${actionById[selected.id].battery_soc_pct}%`}
+                    />
+                  </>
+                )}
                 <p className="text-xs text-sk-ink-muted pt-2 border-t border-sk-card-border/30">
-                  Last simulation share: 78% · Grid draw reduced 12% this week (demo).
+                  Clustering from merged dataset CSV (K-means, charge/discharge indicator).
                 </p>
               </dl>
             ) : regDetail ? (

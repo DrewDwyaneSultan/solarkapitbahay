@@ -22,7 +22,10 @@ export default function HouseholdMemberApp({ member, barangay }) {
       householdCode={barangay?.householdCode ?? 'household_code'}
       memberName={member?.name ?? 'User'}
     >
-      <Page memberName={member?.name ?? 'User'} />
+      <Page
+        memberName={member?.name ?? 'User'}
+        householdId={member?.householdId ?? 'HH-01'}
+      />
     </HouseholdLayout>
   );
 }

@@ -33,7 +33,7 @@ export const householdRows = [
   {
     id: 'HH-01',
     headName: 'Ramon D.',
-    address: 'Purok 2',
+    address: 'Circuit A · Purok 2',
     hasSolar: true,
     hasBattery: true,
     status: 'active',
@@ -41,32 +41,8 @@ export const householdRows = [
   {
     id: 'HH-02',
     headName: 'Linda S.',
-    address: 'Purok 3',
+    address: 'Circuit B · Purok 3',
     hasSolar: false,
-    hasBattery: false,
-    status: 'pending',
-  },
-  {
-    id: 'HH-04',
-    headName: 'Father C.',
-    address: 'Purok 1',
-    hasSolar: true,
-    hasBattery: false,
-    status: 'active',
-  },
-  {
-    id: 'HH-05',
-    headName: 'Mila G.',
-    address: 'Purok 4',
-    hasSolar: false,
-    hasBattery: true,
-    status: 'inactive',
-  },
-  {
-    id: 'HH-08',
-    headName: 'Arnel P.',
-    address: 'Purok 5',
-    hasSolar: true,
     hasBattery: true,
     status: 'active',
   },
@@ -110,10 +86,6 @@ export const householdMemberStats = [
 ];
 
 export const householdMemberRows = [
-  { id: 'HH-01', ok: true, note: 'Supplying' },
-  { id: 'HH-02', ok: false, note: 'Consuming' },
-  { id: 'HH-04', ok: true, note: 'Supplying' },
-  { id: 'HH-05', ok: false, note: 'Consuming' },
-  { id: 'HH-08', ok: true, note: 'Supplying' },
-  { id: 'HH-10', ok: false, note: 'Consuming' },
+  { id: 'HH-01', ok: true, note: 'House A · supplying' },
+  { id: 'HH-02', ok: false, note: 'House B · receiving' },
 ];

@@ -40,16 +40,23 @@ export default function SimulationPage() {
     : null;
 
   const comparisonRows = results?.household_comparison ?? fallbackComparison;
-  const monthlySavings = results ? Math.round(Number(results.total_savings_php) / Number(duration) * 30) : 0;
+  const monthlySavings = results
+    ? Math.round(Number(results.monthly_savings_php ?? 0))
+    : 0;
+  const paybackLabel =
+    results?.payback_months != null
+      ? `~${results.payback_months} mo`
+      : '—';
+  const hardwareCost = results?.hardware_cost_php ?? 1500;
 
   return (
     <div className="space-y-4">
       <div>
         <h2 className="font-serif text-2xl font-semibold text-sk-ink">Simulation Planner</h2>
         <p className="text-sm text-sk-ink-muted mt-1 flex flex-wrap items-center gap-2">
-          Configure parameters and run the pre-optimized algorithm.
+          Configure parameters and run the Greedy energy-sharing algorithm (Colab/TOPSIS winner).
           <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 border border-emerald-300 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-900">
-            ⚡ Hybrid Algorithm (pre-chosen)
+            ⚡ Greedy Algorithm
           </span>
         </p>
       </div>
@@ -138,7 +145,7 @@ export default function SimulationPage() {
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={runSimulation}
+              onClick={() => runSimulation(Number(duration))}
               disabled={isRunning}
               className="flex-1 min-w-[140px] flex items-center justify-center gap-2 py-3 rounded-xl bg-sk-accent text-white font-semibold text-sm hover:opacity-95 disabled:opacity-60 shadow-md"
             >
@@ -164,11 +171,11 @@ export default function SimulationPage() {
               </span>
               <h3 className="font-serif text-xl font-semibold text-sk-ink">Configure & run simulation</h3>
               <p className="text-sm text-sk-ink-muted mt-2 max-w-md">
-                The pre-optimized Hybrid Algorithm will compute optimal energy distribution across your
-                community battery network.
+                Greedy matches surplus to the largest needs first, then routes through the community
+                battery using Davao Light TOU tariffs (same logic as your Colab runs).
               </p>
               <p className="mt-4 text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1">
-                ✓ No algorithm selector needed — already optimized
+                ✓ LP &amp; Hybrid comparison coming later — Greedy is live now
               </p>
             </Card>
           ) : (
@@ -181,14 +188,15 @@ export default function SimulationPage() {
 
               <Card title="System Recommendation">
                 <div className="rounded-xl bg-emerald-50/80 border border-emerald-200 p-4 text-sm text-sk-ink">
-                  <p className="font-semibold text-emerald-900 mb-1">✓ Hybrid algorithm result</p>
+                  <p className="font-semibold text-emerald-900 mb-1">✓ Greedy algorithm result</p>
                   <p>
-                    Based on the pre-optimized Hybrid Algorithm, your {households}-household community with a{' '}
-                    {batteryCapacity} kWh battery can achieve {formatCurrency(results.total_savings_php)} in savings
-                    over {duration} days (~{formatCurrency(monthlySavings)}/month projected).
+                    Your {households}-household community with a {batteryCapacity} kWh battery can save{' '}
+                    {formatCurrency(results.total_savings_php)} over {duration} days (~
+                    {formatCurrency(results.monthly_savings_php ?? monthlySavings)}/month).
                   </p>
                   <p className="text-xs text-sk-ink-muted mt-2">
-                    Estimated payback ~2 years · Hardware cost est. ₱200,000 · Run #{results.run_id}
+                    Hardware est. {formatCurrency(hardwareCost)} (ESP32 stack) · Payback {paybackLabel} · Run #
+                    {results.run_id} · {results.execution_ms}ms
                   </p>
                 </div>
               </Card>

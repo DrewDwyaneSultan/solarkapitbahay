@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { SunLogoIcon } from './components/icons/NavIcons';
+import BrandLogo from './components/BrandLogo';
 import Toggle from './components/ui/Toggle';
 
 const demoAccounts = {
@@ -12,7 +12,15 @@ const demoAccounts = {
     role: 'household',
     name: 'House A',
     house: 'House A',
+    householdId: 'HH-01',
     initials: 'HA',
+  },
+  'houseb@solarkapitbahay.com': {
+    role: 'household',
+    name: 'House B',
+    house: 'House B',
+    householdId: 'HH-02',
+    initials: 'HB',
   },
 };
 
@@ -43,6 +51,7 @@ export default function Login({ onSignIn }) {
       role: 'household',
       name: 'House A',
       house: 'House A',
+      householdId: 'HH-01',
       initials: 'HA',
     });
   };
@@ -60,11 +69,8 @@ export default function Login({ onSignIn }) {
         
         {/* Branding Content */}
         <div className="relative z-10 max-w-md">
-          <div className="flex items-center gap-2 mb-6">
-            <SunLogoIcon className="w-8 h-8 text-amber-400" />
-            <h1 className="text-xl font-bold tracking-wide font-sans">
-              Solar<span className="text-amber-400">KapitBahay</span>
-            </h1>
+          <div className="inline-block rounded-2xl bg-white/95 p-3 mb-6 shadow-lg">
+            <BrandLogo className="h-24 w-auto" />
           </div>
           
           <h2 className="text-4xl md:text-5xl font-semibold leading-tight font-serif mb-6 tracking-wide">
@@ -84,13 +90,7 @@ export default function Login({ onSignIn }) {
       <div className="w-full md:w-1/2 min-h-[55vh] md:min-h-screen flex flex-col justify-center items-center p-6 md:p-12">
         <div className="w-full max-w-sm">
           <div className="flex flex-col items-center mb-6">
-            <SunLogoIcon className="w-10 h-10 text-amber-500" />
-            <p className="mt-2 text-[11px] font-bold uppercase tracking-widest text-sk-ink-muted">
-              Solar
-            </p>
-            <p className="-mt-1 text-[11px] font-bold uppercase tracking-widest text-sk-ink-muted">
-              KapitBahay
-            </p>
+            <BrandLogo className="h-28 w-auto max-w-[240px]" />
           </div>
 
           {/* Role Selector (matches Figma: small rounded tabs) */}
@@ -233,8 +233,26 @@ export default function Login({ onSignIn }) {
                   type="submit"
                   className="w-full h-11 rounded-md bg-sk-run text-white text-sm font-semibold hover:bg-sk-run-hover transition-colors shadow-md shadow-emerald-950/15 mt-2"
                 >
-                  Register Household
+                  Register as House A
                 </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onSignIn?.({
+                      role: 'household',
+                      name: 'House B',
+                      house: 'House B',
+                      householdId: 'HH-02',
+                      initials: 'HB',
+                    })
+                  }
+                  className="w-full h-10 rounded-md border border-sk-card-border/70 bg-white text-sm font-semibold text-sk-ink hover:bg-sk-placeholder/40"
+                >
+                  Preview as House B
+                </button>
+                <p className="text-[11px] text-sk-ink-muted text-center">
+                  Hardware demo uses 2 circuits: House A ↔ House B
+                </p>
               </form>
             </>
           )}
