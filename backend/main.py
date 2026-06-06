@@ -60,13 +60,23 @@ class SimulationRequest(BaseModel):
 
 @app.on_event("startup")
 def on_startup() -> None:
-    init_db()
-    seed_database()
+    app.state.db_ready = False
+    app.state.db_error = None
+    try:
+        init_db()
+        seed_database()
+        app.state.db_ready = True
+    except Exception as exc:
+        app.state.db_error = str(exc)
 
 
 @router.get("/health")
 def health() -> dict:
-    return {"status": "ok", "service": "solarkapitbahay-api", **db_status()}
+    payload = {"status": "ok", "service": "solarkapitbahay-api", **db_status()}
+    if getattr(app.state, "db_error", None):
+        payload["startup_error"] = app.state.db_error
+        payload["status"] = "degraded"
+    return payload
 
 
 @router.post("/simulation/run")

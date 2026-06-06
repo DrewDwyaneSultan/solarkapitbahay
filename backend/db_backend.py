@@ -8,11 +8,38 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
+try:
+    from dotenv import load_dotenv
+
+    _root = Path(__file__).resolve().parent.parent
+    load_dotenv(_root / ".env")
+    load_dotenv(Path(__file__).resolve().parent / ".env")
+except ImportError:
+    pass
+
 _DEFAULT = Path(__file__).parent / "solarkapitbahay.db"
 DB_PATH = Path(
     os.getenv("DATABASE_PATH", str(_DEFAULT if not os.getenv("VERCEL") else "/tmp/solarkapitbahay.db"))
 )
-DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("SUPABASE_DB_URL")
+_PLACEHOLDER_MARKERS = (
+    "YOUR_PASSWORD",
+    "YOUR_PROJECT_REF",
+    "[YOUR-PASSWORD]",
+    "xxxxx",
+    "your_password",
+)
+
+
+def _resolve_database_url() -> str | None:
+    raw = os.getenv("DATABASE_URL") or os.getenv("SUPABASE_DB_URL")
+    if not raw:
+        return None
+    if any(marker in raw for marker in _PLACEHOLDER_MARKERS):
+        return None
+    return raw
+
+
+DATABASE_URL = _resolve_database_url()
 
 
 def use_postgres() -> bool:
@@ -88,7 +115,11 @@ def db_connection() -> Iterator[Any]:
     if use_postgres():
         import psycopg2
 
-        conn = psycopg2.connect(DATABASE_URL)
+        connect_kwargs: dict[str, Any] = {}
+        if DATABASE_URL and "sslmode=" not in DATABASE_URL:
+            connect_kwargs["sslmode"] = "require"
+
+        conn = psycopg2.connect(DATABASE_URL, **connect_kwargs)
         wrapper = _PgConn(conn)
         try:
             yield wrapper
