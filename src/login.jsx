@@ -69,9 +69,7 @@ export default function Login({ onSignIn }) {
         
         {/* Branding Content */}
         <div className="relative z-10 max-w-md">
-          <div className="inline-block rounded-2xl bg-white/95 p-3 mb-6 shadow-lg">
-            <BrandLogo className="h-24 w-auto" />
-          </div>
+          <BrandLogo className="h-28 md:h-32 w-auto mb-6 drop-shadow-lg" />
           
           <h2 className="text-4xl md:text-5xl font-semibold leading-tight font-serif mb-6 tracking-wide">
             Sharing the sun, <br />

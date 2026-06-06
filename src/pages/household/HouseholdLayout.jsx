@@ -16,9 +16,7 @@ export default function HouseholdLayout({
       <header className="px-6 pt-5">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-3">
-            <div className="rounded-xl bg-white p-1.5 border border-black/10 shadow-sm">
-              <BrandLogo className="h-14 w-auto" />
-            </div>
+            <BrandLogo className="h-16 w-auto drop-shadow-sm" />
             <div>
               <p className="text-sm text-black/70 mt-0.5">{barangayName}</p>
               <p className="text-[11px] uppercase tracking-widest text-black/55">

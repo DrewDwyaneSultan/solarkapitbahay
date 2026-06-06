@@ -43,9 +43,7 @@ export default function Sidebar({ activePage, onNavigate, operator }) {
   return (
     <aside className="w-[220px] shrink-0 flex flex-col bg-sk-sidebar text-white min-h-screen">
       <div className="px-5 pt-6 pb-4 border-b border-sk-sidebar-border/50">
-        <div className="rounded-xl bg-white/95 p-2 inline-block">
-          <BrandLogo className="h-11 w-auto" />
-        </div>
+        <BrandLogo className="h-12 w-auto drop-shadow-sm" />
       </div>
 
       <div className="px-4 py-5 flex items-center gap-3 border-b border-sk-sidebar-border/40">
