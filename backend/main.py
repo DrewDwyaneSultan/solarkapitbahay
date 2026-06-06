@@ -79,6 +79,19 @@ def health() -> dict:
     return payload
 
 
+@router.post("/seed")
+def seed_if_empty() -> dict:
+    """One-time seed when DB is connected but households table is empty."""
+    if household_count() > 0:
+        return {"seeded": False, "reason": "already_seeded", "households": household_count()}
+    try:
+        init_db()
+        result = seed_database(force=False)
+        return result
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @router.post("/simulation/run")
 def run_simulation(body: SimulationRequest) -> dict:
     started = time.perf_counter()

@@ -16,7 +16,22 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+BACKEND_DATA = Path(__file__).resolve().parent / "data"
 MERGED_TXT = ROOT / "data" / "csvmerged2 (1).txt"
+BUNDLED_TXT = BACKEND_DATA / "rural_davao_merged.txt"
+
+
+def resolve_dataset_path() -> Path | None:
+    """Find merged dataset — bundled copy first (Vercel), then repo data/."""
+    candidates = [
+        BUNDLED_TXT,
+        MERGED_TXT,
+        ROOT / "data" / "merged_household_dataset.csv",
+    ]
+    for path in candidates:
+        if path.is_file():
+            return path
+    return None
 
 # From file metadata (lines 33–40)
 NUM_HOUSEHOLDS = 15
@@ -81,8 +96,8 @@ def expand_to_household_rows(
     num_households: int = NUM_HOUSEHOLDS,
     seed: int = 42,
 ) -> list[dict[str, str]]:
-    src = path or MERGED_TXT
-    if not src.is_file():
+    src = path or resolve_dataset_path()
+    if src is None or not src.is_file():
         return []
 
     hourly = parse_hourly_rows(src)
@@ -136,11 +151,11 @@ def expand_to_household_rows(
 
 
 def dataset_info(path: Path | None = None) -> dict[str, Any]:
-    src = path or MERGED_TXT
-    meta = src.read_text(encoding="utf-8") if src.is_file() else ""
+    src = path or resolve_dataset_path()
+    meta = src.read_text(encoding="utf-8") if src and src.is_file() else ""
     return {
         "dataset_id": "rural_davao_energy_dataset_v2",
-        "source_file": str(src),
+        "source_file": str(src) if src else "",
         "households": NUM_HOUSEHOLDS,
         "hourly_rows": 24,
         "battery_capacity_kwh": _parse_metadata_num(meta, "battery_capacity_kwh", 22.5),
