@@ -1,6 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import BrandLogo from './components/BrandLogo';
 import Toggle from './components/ui/Toggle';
+import { supabase, isSupabaseConfigured } from './lib/supabaseClient';
+import { fetchHouseholdOptions, saveProfile } from './services/authApi';
+import { profileToUser } from './hooks/useAuth';
 
 const demoAccounts = {
   'operator@solarkapitbahay.com': {
@@ -24,244 +27,426 @@ const demoAccounts = {
   },
 };
 
-export default function Login({ onSignIn }) {
+export default function Login({
+  onSignIn,
+  onProfileComplete,
+  needsProfile = false,
+  session = null,
+  supabaseEnabled = isSupabaseConfigured(),
+}) {
   const [role, setRole] = useState('operator');
-  const [email, setEmail] = useState('operator@solarkapitbahay.com');
-  const [password, setPassword] = useState('admin123');
-  const [error, setError] = useState('');
+  const [mode, setMode] = useState(needsProfile ? 'complete' : 'signin');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [address, setAddress] = useState('');
+  const [householdId, setHouseholdId] = useState('');
+  const [householdOptions, setHouseholdOptions] = useState([]);
   const [hasSolar, setHasSolar] = useState(false);
   const [hasBattery, setHasBattery] = useState(false);
   const [batteryModel, setBatteryModel] = useState('');
   const [batteryCapacity, setBatteryCapacity] = useState('');
+  const [error, setError] = useState('');
+  const [info, setInfo] = useState('');
+  const [busy, setBusy] = useState(false);
 
-  const handleOperatorSignIn = (e) => {
+  useEffect(() => {
+    if (needsProfile) setMode('complete');
+  }, [needsProfile]);
+
+  useEffect(() => {
+    if (mode !== 'complete' || role !== 'household') return;
+    fetchHouseholdOptions()
+      .then((rows) => setHouseholdOptions(rows))
+      .catch(() => setHouseholdOptions([]));
+  }, [mode, role]);
+
+  const resetMessages = () => {
+    setError('');
+    setInfo('');
+  };
+
+  const handleGoogleSignIn = async () => {
+    if (!supabase) return;
+    resetMessages();
+    setBusy(true);
+    const { error: oauthError } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.origin },
+    });
+    if (oauthError) setError(oauthError.message);
+    setBusy(false);
+  };
+
+  const handleEmailAuth = async (e) => {
     e.preventDefault();
+    if (!supabase) return;
+    resetMessages();
+    setBusy(true);
+
+    if (mode === 'signin') {
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+      if (signInError) {
+        setError(signInError.message);
+        setBusy(false);
+        return;
+      }
+      if (data.session) {
+        onSignIn?.({ session: data.session });
+      }
+    } else {
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+        options: { emailRedirectTo: window.location.origin },
+      });
+      if (signUpError) {
+        setError(signUpError.message);
+        setBusy(false);
+        return;
+      }
+      if (data.session) {
+        setMode('complete');
+        setInfo('Account created. Complete your profile below.');
+      } else {
+        setInfo('Check your email to confirm your account, then sign in.');
+        setMode('signin');
+      }
+    }
+    setBusy(false);
+  };
+
+  const handleCompleteProfile = async (e) => {
+    e.preventDefault();
+    const token = session?.access_token;
+    if (!token) {
+      setError('Session expired. Please sign in again.');
+      return;
+    }
+    resetMessages();
+    setBusy(true);
+    try {
+      const saved = await saveProfile(token, {
+        role,
+        display_name: displayName.trim(),
+        address: address.trim() || null,
+        household_id: role === 'household' ? householdId || null : null,
+        has_solar: hasSolar,
+        has_battery: hasBattery,
+        battery_model: hasBattery ? batteryModel.trim() || null : null,
+        battery_capacity_kwh:
+          hasBattery && batteryCapacity ? Number.parseFloat(batteryCapacity) : null,
+      });
+      onProfileComplete?.(saved);
+      onSignIn?.({ user: profileToUser(saved) });
+    } catch (err) {
+      setError(err.message ?? 'Could not save profile.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDemoSignIn = (e) => {
+    e?.preventDefault?.();
     const account = demoAccounts[email.trim().toLowerCase()];
     if (account?.role === 'operator' && password === 'admin123') {
-      setError('');
-      onSignIn?.(account);
+      resetMessages();
+      onSignIn?.({ user: account });
       return;
     }
     setError('Invalid credentials. Try operator@solarkapitbahay.com / admin123');
   };
 
-  const handleHouseholdRegister = (e) => {
-    e.preventDefault();
+  const handleDemoHousehold = () => {
+    resetMessages();
     onSignIn?.({
-      role: 'household',
-      name: 'House A',
-      house: 'House A',
-      householdId: 'HH-01',
-      initials: 'HA',
+      user: {
+        role: 'household',
+        name: 'House A',
+        house: 'House A',
+        householdId: 'HH-01',
+        initials: 'HA',
+      },
     });
   };
 
+  const isComplete = mode === 'complete';
+
   return (
     <div className="flex flex-col md:flex-row min-h-screen w-full bg-sk-canvas">
-      
-      {/* LEFT SIDE: HERO IMAGE & BRANDING */}
       <div
         className="relative w-full md:w-1/2 min-h-[45vh] md:min-h-screen flex flex-col justify-end p-8 md:p-16 bg-cover bg-center text-white"
         style={{ backgroundImage: `url('/solarbackground.jpg')` }}
       >
-        {/* Ambient overlay gradient to guarantee white text remains legible */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent pointer-events-none"></div>
-        
-        {/* Branding Content */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent pointer-events-none" />
         <div className="relative z-10 max-w-md">
-          <BrandLogo className="h-28 md:h-32 w-auto mb-6 drop-shadow-lg" />
-          
           <h2 className="text-4xl md:text-5xl font-semibold leading-tight font-serif mb-6 tracking-wide">
-            Sharing the sun, <br />
+            Sharing the sun,
+            <br />
             together
           </h2>
-          
           <div className="text-[11px] uppercase tracking-widest opacity-75 space-y-1 font-sans border-t border-white/20 pt-4">
             <p className="font-semibold">Solar Energy Management System</p>
             <p>Barangay-Level Distribution Platform</p>
-            <p className="text-amber-400/90 font-medium">Simulation Mode · v0.9-Alpha</p>
+            <p className="text-amber-400/90 font-medium">
+              {supabaseEnabled ? 'Live accounts · Google sign-in' : 'Demo mode · local only'}
+            </p>
           </div>
         </div>
       </div>
 
-      {/* RIGHT SIDE: LOGIN FORM */}
       <div className="w-full md:w-1/2 min-h-[55vh] md:min-h-screen flex flex-col justify-center items-center p-6 md:p-12">
         <div className="w-full max-w-sm">
           <div className="flex flex-col items-center mb-6">
-            <BrandLogo className="h-28 w-auto max-w-[240px]" />
+            <BrandLogo circleBg circleBgSize={140} />
           </div>
 
-          {/* Role Selector (matches Figma: small rounded tabs) */}
-          <div className="flex bg-white/70 p-1 rounded-lg border border-sk-card-border/50 mb-8 shadow-inner">
-            <button
-              type="button"
-              onClick={() => setRole('operator')}
-              className={`flex-1 py-1.5 text-[10px] uppercase tracking-widest font-bold rounded-md transition-colors ${
-                role === 'operator'
-                  ? 'bg-white text-sk-ink shadow-sm'
-                  : 'text-sk-ink-muted hover:text-sk-ink'
-              }`}
-            >
-              Operator Access
-            </button>
-            <button
-              type="button"
-              onClick={() => setRole('household')}
-              className={`flex-1 py-1.5 text-[10px] uppercase tracking-widest font-bold rounded-md transition-colors ${
-                role === 'household'
-                  ? 'bg-white text-sk-ink shadow-sm'
-                  : 'text-sk-ink-muted hover:text-sk-ink'
-              }`}
-            >
-              Household Member
-            </button>
-          </div>
+          {!isComplete && (
+            <div className="flex bg-white/70 p-1 rounded-lg border border-sk-card-border/50 mb-6 shadow-inner">
+              <button
+                type="button"
+                onClick={() => {
+                  setRole('operator');
+                  resetMessages();
+                }}
+                className={`flex-1 py-1.5 text-[10px] uppercase tracking-widest font-bold rounded-md transition-colors ${
+                  role === 'operator'
+                    ? 'bg-white text-sk-ink shadow-sm'
+                    : 'text-sk-ink-muted hover:text-sk-ink'
+                }`}
+              >
+                Operator
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setRole('household');
+                  resetMessages();
+                }}
+                className={`flex-1 py-1.5 text-[10px] uppercase tracking-widest font-bold rounded-md transition-colors ${
+                  role === 'household'
+                    ? 'bg-white text-sk-ink shadow-sm'
+                    : 'text-sk-ink-muted hover:text-sk-ink'
+                }`}
+              >
+                Household
+              </button>
+            </div>
+          )}
 
-          {role === 'operator' ? (
+          {isComplete ? (
             <>
               <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-sk-ink-muted mb-2">
-                Operator Access
+                One more step
               </p>
-              <h3 className="font-serif text-3xl text-sk-ink leading-tight mb-8">
-                Welcome online,
+              <h3 className="font-serif text-3xl text-sk-ink leading-tight mb-6">
+                Complete your
                 <br />
-                <span className="italic font-semibold">operator.</span>
+                <span className="italic font-semibold">profile.</span>
+              </h3>
+              <form className="space-y-4" onSubmit={handleCompleteProfile}>
+                {!needsProfile && (
+                  <div className="flex bg-white/70 p-1 rounded-lg border border-sk-card-border/50 mb-2">
+                    <button
+                      type="button"
+                      onClick={() => setRole('operator')}
+                      className={`flex-1 py-1 text-[10px] uppercase tracking-widest font-bold rounded-md ${
+                        role === 'operator' ? 'bg-white text-sk-ink shadow-sm' : 'text-sk-ink-muted'
+                      }`}
+                    >
+                      Operator
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRole('household')}
+                      className={`flex-1 py-1 text-[10px] uppercase tracking-widest font-bold rounded-md ${
+                        role === 'household' ? 'bg-white text-sk-ink shadow-sm' : 'text-sk-ink-muted'
+                      }`}
+                    >
+                      Household
+                    </button>
+                  </div>
+                )}
+                <Field label="Display name" value={displayName} onChange={setDisplayName} required />
+                {role === 'household' && (
+                  <>
+                    <Field label="Address" value={address} onChange={setAddress} />
+                    <div className="space-y-1.5">
+                      <label className="block text-[10px] font-bold uppercase tracking-widest text-sk-ink-muted">
+                        Link to household (optional)
+                      </label>
+                      <select
+                        value={householdId}
+                        onChange={(e) => setHouseholdId(e.target.value)}
+                        className="w-full h-10 rounded-md border border-sk-card-border/60 bg-white px-3 text-sm text-sk-ink"
+                      >
+                        <option value="">New registration — pending approval</option>
+                        {householdOptions.map((hh) => (
+                          <option key={hh.id} value={hh.id}>
+                            {hh.id} — {hh.head_name ?? hh.circuit_name ?? 'Household'}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <HouseholdEquipmentFields
+                      hasSolar={hasSolar}
+                      setHasSolar={setHasSolar}
+                      hasBattery={hasBattery}
+                      setHasBattery={setHasBattery}
+                      batteryModel={batteryModel}
+                      setBatteryModel={setBatteryModel}
+                      batteryCapacity={batteryCapacity}
+                      setBatteryCapacity={setBatteryCapacity}
+                    />
+                  </>
+                )}
+                {error && <Alert tone="error">{error}</Alert>}
+                {info && <Alert tone="info">{info}</Alert>}
+                <SubmitButton busy={busy}>Save profile & continue</SubmitButton>
+              </form>
+            </>
+          ) : supabaseEnabled ? (
+            <>
+              <div className="flex gap-2 mb-6">
+                <TabButton active={mode === 'signin'} onClick={() => { setMode('signin'); resetMessages(); }}>
+                  Sign in
+                </TabButton>
+                <TabButton active={mode === 'signup'} onClick={() => { setMode('signup'); resetMessages(); }}>
+                  Sign up
+                </TabButton>
+              </div>
+
+              <h3 className="font-serif text-3xl text-sk-ink leading-tight mb-6">
+                {mode === 'signin' ? 'Welcome back.' : 'Create an account.'}
               </h3>
 
-              <form className="space-y-5" onSubmit={handleOperatorSignIn}>
-                <div className="space-y-2">
-                  <label className="block text-[10px] font-bold uppercase tracking-widest text-sk-ink-muted">
-                    Username
-                  </label>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full h-10 rounded-md border border-sk-card-border/60 bg-white px-3 text-sm text-sk-ink focus:outline-none focus:ring-2 focus:ring-sk-run/30"
-                  />
-                </div>
+              <button
+                type="button"
+                onClick={handleGoogleSignIn}
+                disabled={busy}
+                className="w-full h-11 rounded-md border border-sk-card-border/70 bg-white text-sm font-semibold text-sk-ink hover:bg-sk-placeholder/30 flex items-center justify-center gap-2 mb-4"
+              >
+                <GoogleIcon />
+                Continue with Google
+              </button>
 
-                <div className="space-y-2">
-                  <label className="block text-[10px] font-bold uppercase tracking-widest text-sk-ink-muted">
-                    Password
-                  </label>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full h-10 rounded-md border border-sk-card-border/60 bg-white px-3 text-sm text-sk-ink focus:outline-none focus:ring-2 focus:ring-sk-run/30"
-                  />
-                </div>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="h-px flex-1 bg-sk-card-border/50" />
+                <span className="text-[10px] uppercase tracking-widest text-sk-ink-muted">or email</span>
+                <div className="h-px flex-1 bg-sk-card-border/50" />
+              </div>
 
-                {error && (
-                  <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-md px-3 py-2">
-                    {error}
-                  </p>
-                )}
+              <form className="space-y-4" onSubmit={handleEmailAuth}>
+                <Field
+                  label="Email"
+                  type="email"
+                  value={email}
+                  onChange={setEmail}
+                  required
+                />
+                <Field
+                  label="Password"
+                  type="password"
+                  value={password}
+                  onChange={setPassword}
+                  required
+                  minLength={6}
+                />
+                {error && <Alert tone="error">{error}</Alert>}
+                {info && <Alert tone="info">{info}</Alert>}
+                <SubmitButton busy={busy}>
+                  {mode === 'signin' ? 'Sign in' : 'Create account'}
+                </SubmitButton>
+              </form>
 
+              <p className="text-[10px] text-sk-ink-muted mt-4 text-center">
+                {role === 'operator'
+                  ? 'Operators manage barangay dashboards and simulations.'
+                  : 'Household members register energy data and view sharing.'}
+              </p>
+            </>
+          ) : role === 'operator' ? (
+            <>
+              <h3 className="font-serif text-3xl text-sk-ink leading-tight mb-8">
+                Demo operator sign-in
+              </h3>
+              <form className="space-y-5" onSubmit={handleDemoSignIn}>
+                <Field
+                  label="Email"
+                  type="email"
+                  value={email}
+                  onChange={setEmail}
+                  placeholder="operator@solarkapitbahay.com"
+                />
+                <Field
+                  label="Password"
+                  type="password"
+                  value={password}
+                  onChange={setPassword}
+                />
+                {error && <Alert tone="error">{error}</Alert>}
                 <p className="text-[10px] text-sk-ink-muted bg-sk-placeholder/40 rounded-md px-3 py-2">
                   Demo: operator@solarkapitbahay.com / admin123
                 </p>
-
-                <button
-                  type="submit"
-                  className="w-full h-11 rounded-md bg-sk-run text-white text-sm font-semibold hover:bg-sk-run-hover transition-colors shadow-md shadow-emerald-950/15"
-                >
-                  Sign in to Dashboard
-                </button>
+                <SubmitButton busy={busy}>Sign in to Dashboard</SubmitButton>
               </form>
             </>
           ) : (
             <>
-              <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-sk-ink-muted mb-2">
-                Household Access
-              </p>
               <h3 className="font-serif text-3xl text-sk-ink leading-tight mb-6">
-                Register your,
-                <br />
-                <span className="italic font-semibold">energy data.</span>
+                Demo household preview
               </h3>
-
-              <form className="space-y-4" onSubmit={handleHouseholdRegister}>
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Email" />
-                  <Field label="Name" />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Password" type="password" />
-                  <Field label="Address" />
-                </div>
-
-                <div className="rounded-xl border border-sk-card-border/40 bg-white/50 p-4 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-semibold text-sk-ink">Solar panel installed</p>
-                      <p className="text-xs text-sk-ink-muted">Household can export surplus energy</p>
-                    </div>
-                    <Toggle on={hasSolar} onChange={setHasSolar} label="Has solar panel" />
-                  </div>
-                  <div className="flex items-center justify-between border-t border-sk-card-border/30 pt-4">
-                    <div>
-                      <p className="text-sm font-semibold text-sk-ink">Battery installed</p>
-                      <p className="text-xs text-sk-ink-muted">Enable to enter battery details</p>
-                    </div>
-                    <Toggle on={hasBattery} onChange={setHasBattery} label="Has battery" />
-                  </div>
-                </div>
-
-                {hasBattery && (
-                  <div className="space-y-2 rounded-xl border border-amber-200/60 bg-amber-50/40 p-4">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-sk-ink-muted mb-2">
-                      Battery information
-                    </p>
-                    <SmallPillInput
-                      placeholder="Battery model (e.g. LiFePO4 5kWh)"
-                      value={batteryModel}
-                      onChange={setBatteryModel}
-                    />
-                    <SmallPillInput
-                      placeholder="Capacity (kWh)"
-                      value={batteryCapacity}
-                      onChange={setBatteryCapacity}
-                    />
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  className="w-full h-11 rounded-md bg-sk-run text-white text-sm font-semibold hover:bg-sk-run-hover transition-colors shadow-md shadow-emerald-950/15 mt-2"
-                >
-                  Register as House A
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    onSignIn?.({
+              <p className="text-sm text-sk-ink-muted mb-4">
+                Configure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY for real sign-up.
+              </p>
+              <SubmitButton busy={busy} onClick={handleDemoHousehold}>
+                Preview as House A
+              </SubmitButton>
+              <button
+                type="button"
+                onClick={() =>
+                  onSignIn?.({
+                    user: {
                       role: 'household',
                       name: 'House B',
                       house: 'House B',
                       householdId: 'HH-02',
                       initials: 'HB',
-                    })
-                  }
-                  className="w-full h-10 rounded-md border border-sk-card-border/70 bg-white text-sm font-semibold text-sk-ink hover:bg-sk-placeholder/40"
-                >
-                  Preview as House B
-                </button>
-                <p className="text-[11px] text-sk-ink-muted text-center">
-                  Hardware demo uses 2 circuits: House A ↔ House B
-                </p>
-              </form>
+                    },
+                  })
+                }
+                className="w-full h-10 mt-2 rounded-md border border-sk-card-border/70 bg-white text-sm font-semibold text-sk-ink hover:bg-sk-placeholder/40"
+              >
+                Preview as House B
+              </button>
             </>
           )}
         </div>
       </div>
-
     </div>
   );
 }
 
-function Field({ label, type = 'text' }) {
+function TabButton({ active, onClick, children }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex-1 py-1.5 text-[10px] uppercase tracking-widest font-bold rounded-md border transition-colors ${
+        active
+          ? 'bg-sk-run text-white border-sk-run'
+          : 'bg-white text-sk-ink-muted border-sk-card-border/50 hover:text-sk-ink'
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Field({ label, type = 'text', value, onChange, required, placeholder, minLength }) {
   return (
     <div className="space-y-1.5">
       <label className="block text-[10px] font-bold uppercase tracking-widest text-sk-ink-muted">
@@ -269,20 +454,95 @@ function Field({ label, type = 'text' }) {
       </label>
       <input
         type={type}
-        className="w-full h-9 rounded-md border border-sk-card-border/60 bg-white px-3 text-sm text-sk-ink focus:outline-none focus:ring-2 focus:ring-sk-run/30"
+        value={value}
+        onChange={(e) => onChange?.(e.target.value)}
+        required={required}
+        placeholder={placeholder}
+        minLength={minLength}
+        className="w-full h-10 rounded-md border border-sk-card-border/60 bg-white px-3 text-sm text-sk-ink focus:outline-none focus:ring-2 focus:ring-sk-run/30"
       />
     </div>
   );
 }
 
-function SmallPillInput({ placeholder, value = '', onChange }) {
+function HouseholdEquipmentFields({
+  hasSolar,
+  setHasSolar,
+  hasBattery,
+  setHasBattery,
+  batteryModel,
+  setBatteryModel,
+  batteryCapacity,
+  setBatteryCapacity,
+}) {
   return (
-    <input
-      type="text"
-      placeholder={placeholder}
-      value={value}
-      onChange={(e) => onChange?.(e.target.value)}
-      className="w-full h-9 rounded-full border border-sk-card-border/50 bg-white/70 px-4 text-sm text-sk-ink placeholder:text-sk-ink-muted/70 focus:outline-none focus:ring-2 focus:ring-sk-run/25"
-    />
+    <>
+      <div className="rounded-xl border border-sk-card-border/40 bg-white/50 p-4 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold text-sk-ink">Solar panel installed</p>
+            <p className="text-xs text-sk-ink-muted">Household can export surplus energy</p>
+          </div>
+          <Toggle on={hasSolar} onChange={setHasSolar} label="Has solar panel" />
+        </div>
+        <div className="flex items-center justify-between border-t border-sk-card-border/30 pt-4">
+          <div>
+            <p className="text-sm font-semibold text-sk-ink">Battery installed</p>
+            <p className="text-xs text-sk-ink-muted">Enable to enter battery details</p>
+          </div>
+          <Toggle on={hasBattery} onChange={setHasBattery} label="Has battery" />
+        </div>
+      </div>
+      {hasBattery && (
+        <div className="space-y-2 rounded-xl border border-amber-200/60 bg-amber-50/40 p-4">
+          <Field
+            label="Battery model"
+            value={batteryModel}
+            onChange={setBatteryModel}
+            placeholder="LiFePO4 5kWh"
+          />
+          <Field
+            label="Capacity (kWh)"
+            value={batteryCapacity}
+            onChange={setBatteryCapacity}
+            placeholder="5"
+          />
+        </div>
+      )}
+    </>
+  );
+}
+
+function SubmitButton({ children, busy, onClick, type = 'submit' }) {
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={busy}
+      className="w-full h-11 rounded-md bg-sk-run text-white text-sm font-semibold hover:bg-sk-run-hover transition-colors shadow-md shadow-emerald-950/15 disabled:opacity-60"
+    >
+      {busy ? 'Please wait…' : children}
+    </button>
+  );
+}
+
+function Alert({ tone, children }) {
+  const styles =
+    tone === 'error'
+      ? 'text-rose-700 bg-rose-50 border-rose-200'
+      : 'text-emerald-800 bg-emerald-50 border-emerald-200';
+  return (
+    <p className={`text-xs border rounded-md px-3 py-2 ${styles}`}>{children}</p>
+  );
+}
+
+function GoogleIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden>
+      <path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303C33.654 32.657 29.203 36 24 36c-5.522 0-10-4.478-10-10s4.478-10 10-10c2.837 0 5.357 1.087 7.263 2.863l5.657-5.657C33.64 10.053 29.082 8 24 8 12.955 8 4 16.955 4 28s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z" />
+      <path fill="#FF3D00" d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c2.837 0 5.357 1.087 7.263 2.863l5.657-5.657C33.64 10.053 29.082 8 24 8 16.318 8 9.656 13.337 6.306 14.691z" />
+      <path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238C29.211 35.091 26.715 36 24 36c-5.203 0-9.62-3.134-11.278-7.584l-6.522 5.025C9.505 39.556 16.227 44 24 44z" />
+      <path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l6.19 5.238C42.022 35.026 44 30.038 44 24c0-1.341-.138-2.65-.389-3.917z" />
+    </svg>
   );
 }

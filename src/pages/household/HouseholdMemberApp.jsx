@@ -10,7 +10,7 @@ const pages = {
   memberSettings: HouseholdSettingsPage,
 };
 
-export default function HouseholdMemberApp({ member, barangay }) {
+export default function HouseholdMemberApp({ member, barangay, onLogout }) {
   const [activePage, setActivePage] = useState('memberDashboard');
   const Page = pages[activePage] ?? HouseholdDashboardPage;
 
@@ -21,6 +21,7 @@ export default function HouseholdMemberApp({ member, barangay }) {
       barangayName={barangay?.name ?? 'Barangay Name'}
       householdCode={barangay?.householdCode ?? 'household_code'}
       memberName={member?.name ?? 'User'}
+      onLogout={onLogout}
     >
       <Page
         memberName={member?.name ?? 'User'}

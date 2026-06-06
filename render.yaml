@@ -13,3 +13,6 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: "3.11.0"
+      # Set in Render dashboard after creating a Supabase project (see docs/DEPLOY_DEMO.md)
+      - key: DATABASE_URL
+        sync: false

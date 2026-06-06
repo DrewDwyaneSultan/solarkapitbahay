@@ -89,3 +89,22 @@ CREATE TABLE IF NOT EXISTS simulation_runs (
 
 CREATE INDEX IF NOT EXISTS idx_hourly_energy_household ON hourly_energy_records(household_id);
 CREATE INDEX IF NOT EXISTS idx_simulation_runs_created ON simulation_runs(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS user_profiles (
+    id                      TEXT PRIMARY KEY,
+    email                   TEXT NOT NULL UNIQUE,
+    role                    TEXT NOT NULL CHECK (role IN ('operator','household')),
+    display_name            TEXT NOT NULL,
+    household_id            TEXT REFERENCES households(id) ON DELETE SET NULL,
+    address                 TEXT,
+    has_solar               SMALLINT DEFAULT 0,
+    has_battery             SMALLINT DEFAULT 0,
+    battery_model           TEXT,
+    battery_capacity_kwh    DOUBLE PRECISION,
+    status                  TEXT NOT NULL DEFAULT 'active'
+                            CHECK (status IN ('active','pending','inactive')),
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at              TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_profiles_role ON user_profiles(role);

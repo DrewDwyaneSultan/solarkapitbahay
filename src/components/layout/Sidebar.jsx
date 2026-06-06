@@ -35,15 +35,15 @@ function NavGroup({ title, items, activeId, onNavigate }) {
   );
 }
 
-export default function Sidebar({ activePage, onNavigate, operator }) {
+export default function Sidebar({ activePage, onNavigate, operator, onLogout }) {
   const initials = operator?.initials ?? 'JU';
   const name = operator?.name ?? 'Juan Ulbenario';
   const role = operator?.role ?? 'Barangay Operator';
 
   return (
     <aside className="w-[220px] shrink-0 flex flex-col bg-sk-sidebar text-white min-h-screen">
-      <div className="px-5 pt-6 pb-4 border-b border-sk-sidebar-border/50">
-        <BrandLogo className="h-12 w-auto drop-shadow-sm" />
+      <div className="flex justify-center items-center px-5 pt-6 pb-5 border-b border-sk-sidebar-border/50">
+        <BrandLogo circleBg circleBgSize={140} />
       </div>
 
       <div className="px-4 py-5 flex items-center gap-3 border-b border-sk-sidebar-border/40">
@@ -75,6 +75,16 @@ export default function Sidebar({ activePage, onNavigate, operator }) {
           onNavigate={onNavigate}
         />
       </nav>
+
+      <div className="px-3 py-4 border-t border-sk-sidebar-border/40">
+        <button
+          type="button"
+          onClick={onLogout}
+          className="w-full py-2.5 rounded-xl text-sm font-medium text-white/80 hover:bg-white/10 hover:text-white transition-colors"
+        >
+          Log out
+        </button>
+      </div>
     </aside>
   );
 }

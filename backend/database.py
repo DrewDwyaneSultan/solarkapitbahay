@@ -105,8 +105,24 @@ CREATE TABLE IF NOT EXISTS simulation_runs (
     params_json JSONB NOT NULL,
     results_json JSONB NOT NULL
 );
+CREATE TABLE IF NOT EXISTS user_profiles (
+    id TEXT PRIMARY KEY,
+    email TEXT NOT NULL UNIQUE,
+    role TEXT NOT NULL CHECK (role IN ('operator','household')),
+    display_name TEXT NOT NULL,
+    household_id TEXT REFERENCES households(id) ON DELETE SET NULL,
+    address TEXT,
+    has_solar SMALLINT DEFAULT 0,
+    has_battery SMALLINT DEFAULT 0,
+    battery_model TEXT,
+    battery_capacity_kwh DOUBLE PRECISION,
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','pending','inactive')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ
+);
 CREATE INDEX IF NOT EXISTS idx_hourly_energy_household ON hourly_energy_records(household_id);
 CREATE INDEX IF NOT EXISTS idx_simulation_runs_created ON simulation_runs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_user_profiles_role ON user_profiles(role);
 """
 
 SQLITE_SCHEMA = """
@@ -195,6 +211,23 @@ CREATE TABLE IF NOT EXISTS simulation_runs (
     params_json TEXT NOT NULL,
     results_json TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS user_profiles (
+    id                      TEXT PRIMARY KEY,
+    email                   TEXT NOT NULL UNIQUE,
+    role                    TEXT NOT NULL CHECK (role IN ('operator','household')),
+    display_name            TEXT NOT NULL,
+    household_id            TEXT REFERENCES households(id),
+    address                 TEXT,
+    has_solar               INTEGER DEFAULT 0,
+    has_battery             INTEGER DEFAULT 0,
+    battery_model           TEXT,
+    battery_capacity_kwh    REAL,
+    status                  TEXT NOT NULL DEFAULT 'active'
+                            CHECK (status IN ('active','pending','inactive')),
+    created_at              TEXT NOT NULL,
+    updated_at              TEXT
+);
 """
 
 
@@ -222,12 +255,44 @@ def init_db() -> None:
         with db_connection() as conn:
             conn.executescript(SQLITE_SCHEMA)
             _migrate_simulation_runs_sqlite(conn)
+            _migrate_user_profiles_sqlite(conn)
 
 
 def _migrate_simulation_runs_sqlite(conn) -> None:
     cols = {row[1] for row in conn.execute("PRAGMA table_info(simulation_runs)").fetchall()}
     if "barangay_id" not in cols:
         conn.execute("ALTER TABLE simulation_runs ADD COLUMN barangay_id INTEGER REFERENCES barangays(id)")
+
+
+def _migrate_user_profiles_sqlite(conn) -> None:
+    tables = {
+        row[0]
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='user_profiles'"
+        ).fetchall()
+    }
+    if "user_profiles" in tables:
+        return
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS user_profiles (
+            id                      TEXT PRIMARY KEY,
+            email                   TEXT NOT NULL UNIQUE,
+            role                    TEXT NOT NULL CHECK (role IN ('operator','household')),
+            display_name            TEXT NOT NULL,
+            household_id            TEXT REFERENCES households(id),
+            address                 TEXT,
+            has_solar               INTEGER DEFAULT 0,
+            has_battery             INTEGER DEFAULT 0,
+            battery_model           TEXT,
+            battery_capacity_kwh    REAL,
+            status                  TEXT NOT NULL DEFAULT 'active'
+                                    CHECK (status IN ('active','pending','inactive')),
+            created_at              TEXT NOT NULL,
+            updated_at              TEXT
+        );
+        """
+    )
 
 
 def _clear_seed_tables(conn) -> None:
@@ -565,3 +630,104 @@ def get_run(run_id: int) -> dict | None:
     data["params"] = params_raw if isinstance(params_raw, dict) else json.loads(params_raw)
     data["results"] = results_raw if isinstance(results_raw, dict) else json.loads(results_raw)
     return data
+
+
+def _profile_row_to_dict(row: Any) -> dict:
+    data = dict(row)
+    data["has_solar"] = bool(data.get("has_solar"))
+    data["has_battery"] = bool(data.get("has_battery"))
+    return data
+
+
+def get_user_profile(auth_user_id: str) -> dict | None:
+    with db_connection() as conn:
+        row = fetchone(conn, "SELECT * FROM user_profiles WHERE id = ?", (auth_user_id,))
+    if not row:
+        return None
+    profile = _profile_row_to_dict(row)
+    if profile.get("household_id"):
+        hh = get_household(profile["household_id"])
+        if hh:
+            profile["circuit_name"] = hh.get("circuit_name")
+            profile["house_label"] = hh.get("head_name")
+    return profile
+
+
+def upsert_user_profile(
+    auth_user_id: str,
+    email: str,
+    *,
+    role: str,
+    display_name: str,
+    household_id: str | None = None,
+    address: str | None = None,
+    has_solar: bool = False,
+    has_battery: bool = False,
+    battery_model: str | None = None,
+    battery_capacity_kwh: float | None = None,
+) -> dict:
+    if role not in ("operator", "household"):
+        raise ValueError("role must be operator or household")
+    if household_id and not get_household(household_id):
+        raise ValueError(f"Household {household_id} not found")
+
+    status = "active" if role == "operator" or household_id else "pending"
+    now = _utc_now()
+    existing = get_user_profile(auth_user_id)
+
+    with db_connection() as conn:
+        if existing:
+            conn.execute(
+                """
+                UPDATE user_profiles SET
+                    email = ?, role = ?, display_name = ?, household_id = ?,
+                    address = ?, has_solar = ?, has_battery = ?,
+                    battery_model = ?, battery_capacity_kwh = ?,
+                    status = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    email.lower(),
+                    role,
+                    display_name,
+                    household_id,
+                    address,
+                    int(has_solar),
+                    int(has_battery),
+                    battery_model,
+                    battery_capacity_kwh,
+                    status,
+                    now,
+                    auth_user_id,
+                ),
+            )
+        else:
+            conn.execute(
+                """
+                INSERT INTO user_profiles (
+                    id, email, role, display_name, household_id, address,
+                    has_solar, has_battery, battery_model, battery_capacity_kwh,
+                    status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    auth_user_id,
+                    email.lower(),
+                    role,
+                    display_name,
+                    household_id,
+                    address,
+                    int(has_solar),
+                    int(has_battery),
+                    battery_model,
+                    battery_capacity_kwh,
+                    status,
+                    now,
+                    now,
+                ),
+            )
+
+    profile = get_user_profile(auth_user_id)
+    if not profile:
+        raise RuntimeError("Failed to save user profile")
+    return profile

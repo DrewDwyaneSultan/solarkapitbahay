@@ -8,7 +8,7 @@ import os
 import time
 from typing import Literal
 
-from fastapi import APIRouter, FastAPI, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -20,13 +20,16 @@ from database import (
     get_active_dataset,
     get_household,
     get_run,
+    get_user_profile,
     household_count,
     init_db,
     list_households,
     list_runs,
     save_run,
     seed_database,
+    upsert_user_profile,
 )
+from auth import auth_configured, get_auth_user_id, get_token_email
 
 # On Vercel Services, routePrefix "/api" is stripped before the request hits FastAPI.
 # Locally (and on Render), routes keep the "/api" prefix to match the Vite proxy.
@@ -58,6 +61,17 @@ class SimulationRequest(BaseModel):
     algorithm: Literal["greedy"] = "greedy"
 
 
+class ProfileRequest(BaseModel):
+    role: Literal["operator", "household"]
+    display_name: str = Field(min_length=1, max_length=120)
+    address: str | None = None
+    household_id: str | None = None
+    has_solar: bool = False
+    has_battery: bool = False
+    battery_model: str | None = None
+    battery_capacity_kwh: float | None = None
+
+
 @app.on_event("startup")
 def on_startup() -> None:
     app.state.db_ready = False
@@ -73,10 +87,47 @@ def on_startup() -> None:
 @router.get("/health")
 def health() -> dict:
     payload = {"status": "ok", "service": "solarkapitbahay-api", **db_status()}
+    payload["auth_configured"] = auth_configured()
     if getattr(app.state, "db_error", None):
         payload["startup_error"] = app.state.db_error
         payload["status"] = "degraded"
     return payload
+
+
+@router.get("/auth/status")
+def auth_status() -> dict:
+    return {"auth_configured": auth_configured()}
+
+
+@router.get("/auth/me")
+def auth_me(user_id: str = Depends(get_auth_user_id)) -> dict:
+    profile = get_user_profile(user_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found. Complete registration.")
+    return profile
+
+
+@router.post("/auth/profile")
+def auth_save_profile(
+    body: ProfileRequest,
+    user_id: str = Depends(get_auth_user_id),
+    email: str = Depends(get_token_email),
+) -> dict:
+    try:
+        return upsert_user_profile(
+            user_id,
+            email,
+            role=body.role,
+            display_name=body.display_name.strip(),
+            household_id=body.household_id,
+            address=body.address,
+            has_solar=body.has_solar,
+            has_battery=body.has_battery,
+            battery_model=body.battery_model,
+            battery_capacity_kwh=body.battery_capacity_kwh,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/seed")

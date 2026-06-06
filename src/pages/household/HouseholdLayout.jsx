@@ -9,6 +9,7 @@ export default function HouseholdLayout({
   barangayName = 'Barangay Name',
   householdCode = 'household_code',
   memberName = 'User',
+  onLogout,
   children,
 }) {
   return (
@@ -26,6 +27,13 @@ export default function HouseholdLayout({
           </div>
 
           <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={onLogout}
+              className="text-[10px] uppercase tracking-widest font-bold text-black/50 hover:text-black/80 px-2 py-1 rounded-md hover:bg-black/5"
+            >
+              Log out
+            </button>
             <div className="text-right">
               <p className="text-xs font-semibold text-black/70">{memberName}</p>
               <p className="text-[10px] uppercase tracking-widest text-black/45">

@@ -8,11 +8,17 @@ export default function DashboardLayout({
   operator,
   barangayName,
   headerSubtitle,
+  onLogout,
   children,
 }) {
   return (
     <div className="flex min-h-screen bg-sk-canvas font-sans text-sk-ink">
-      <Sidebar activePage={activePage} onNavigate={onNavigate} operator={operator} />
+      <Sidebar
+        activePage={activePage}
+        onNavigate={onNavigate}
+        operator={operator}
+        onLogout={onLogout}
+      />
       <main className="flex-1 min-w-0 overflow-auto">
         <div className="max-w-[1200px] mx-auto px-6 py-6 md:px-8 md:py-8">
           <MainHeader barangayName={barangayName} subtitle={headerSubtitle} />
