@@ -168,6 +168,63 @@ def _kmeans(points: list[list[float]], k: int, seed: int = 42, max_iter: int = 4
     return labels, centroids
 
 
+def _euclidean(a: list[float], b: list[float]) -> float:
+    return sum((a[d] - b[d]) ** 2 for d in range(len(a))) ** 0.5
+
+
+def _inertia(points: list[list[float]], labels: list[int], centroids: list[list[float]]) -> float:
+    """Within-cluster sum of squares (WCSS) on normalized features — lower is tighter."""
+    return sum(
+        sum((points[i][d] - centroids[labels[i]][d]) ** 2 for d in range(len(points[i])))
+        for i in range(len(points))
+    )
+
+
+def _silhouette_score(points: list[list[float]], labels: list[int]) -> float | None:
+    """
+    Mean silhouette coefficient in [-1, 1].
+    Typical interpretation: 0.25–0.5 = moderate separation (common on small real datasets).
+    """
+    n = len(points)
+    if n < 2 or len(set(labels)) < 2:
+        return None
+
+    scores: list[float] = []
+    for i in range(n):
+        same = [j for j in range(n) if labels[j] == labels[i] and j != i]
+        if not same:
+            continue
+        a = sum(_euclidean(points[i], points[j]) for j in same) / len(same)
+
+        b = float("inf")
+        for cluster in set(labels):
+            if cluster == labels[i]:
+                continue
+            others = [j for j in range(n) if labels[j] == cluster]
+            if others:
+                mean_dist = sum(_euclidean(points[i], points[j]) for j in others) / len(others)
+                b = min(b, mean_dist)
+
+        if b == float("inf"):
+            continue
+        denom = max(a, b)
+        scores.append((b - a) / denom if denom > 0 else 0.0)
+
+    return round(sum(scores) / len(scores), 4) if scores else None
+
+
+def _silhouette_interpretation(score: float | None) -> str:
+    if score is None:
+        return "Not enough clusters to score."
+    if score >= 0.5:
+        return "Good separation — clusters are reasonably distinct."
+    if score >= 0.25:
+        return "Moderate separation — typical for small household energy samples."
+    if score >= 0:
+        return "Weak structure — clusters overlap; consider feature tuning or different k."
+    return "Poor fit — points may be closer to other clusters than their own."
+
+
 def _normalize_matrix(rows: list[list[float]]) -> tuple[list[list[float]], list[float], list[float]]:
     if not rows:
         return [], [], []
@@ -240,6 +297,10 @@ def run_clustering(csv_path: Path | None = None, k: int = 3, seed: int = 42) -> 
         for a in ACTION_META
     }
 
+    inertia = round(_inertia(scaled, labels, centroids), 4)
+    silhouette = _silhouette_score(scaled, labels)
+    cluster_sizes = [sum(1 for lb in labels if lb == j) for j in range(k)]
+
     return {
         "households": households,
         "summary": summary,
@@ -247,6 +308,20 @@ def run_clustering(csv_path: Path | None = None, k: int = 3, seed: int = 42) -> 
         "dataset_path": str(dataset_path),
         "dataset_meta": dataset_meta,
         "total_rows": len(raw),
+        "metrics": {
+            "algorithm": "k-means",
+            "k": k,
+            "seed": seed,
+            "max_iterations": 40,
+            "feature_count": 3,
+            "features": ["net_load_kwh", "battery_soc_pct", "grid_import_kwh"],
+            "scaling": "min-max [0, 1]",
+            "inertia_wcss": inertia,
+            "silhouette_score": silhouette,
+            "silhouette_interpretation": _silhouette_interpretation(silhouette),
+            "cluster_sizes": cluster_sizes,
+            "sample_count": len(households),
+        },
     }
 
 

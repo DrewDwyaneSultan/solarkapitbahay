@@ -5,12 +5,19 @@ import BatteryOrganism from '../components/energy/BatteryOrganism';
 import SimpleLineChart from '../components/charts/SimpleLineChart';
 import SimpleDualBarChart from '../components/charts/SimpleDualBarChart';
 import ClusterScatterPlot from '../components/clustering/ClusterScatterPlot';
+import ClusterMetrics from '../components/clustering/ClusterMetrics';
 import { useClustering } from '../hooks/useClustering';
 import { useLiveData } from '../hooks/useLiveData';
 
 export default function DashboardPage({ operatorName = 'Barangay Operator' }) {
   const data = useLiveData();
-  const { data: clusterData, loading: clusterLoading, error: clusterError } = useClustering();
+  const {
+    data: clusterData,
+    loading: clusterLoading,
+    error: clusterError,
+    liveHouseholds,
+    liveActive,
+  } = useClustering();
   const [chartPeriod, setChartPeriod] = useState('week');
   const savingsData = [20, 35, 45, 60, 80, 110, 140];
   const hourWithout = [8, 7, 6, 5];
@@ -51,10 +58,16 @@ export default function DashboardPage({ operatorName = 'Barangay Operator' }) {
         <BatteryOrganism data={data} />
       </Card>
 
-      <Card title="Battery Clustering — Charge / Discharge (merged dataset)">
+      <Card title="Battery Clustering — Charge / Discharge">
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          <span className={`inline-flex items-center gap-1.5 text-xs ${liveActive ? 'text-emerald-800' : 'text-sk-ink-muted'}`}>
+            <span className={`w-2 h-2 rounded-full ${liveActive ? 'bg-emerald-600 animate-pulse' : 'bg-stone-400'}`} />
+            {liveActive ? 'Live House A & B on chart (green ring)' : 'CSV dataset only — power ESP32s for live overlay'}
+          </span>
+        </div>
         <p className="text-xs text-sk-ink-muted mb-4">
-          K-means on <code className="text-[10px]">data/csvmerged2 (1).txt</code> (15 households
-          expanded from PVGIS hourly rows). Blue = charge, amber = discharge, gray = balanced.
+          Gray dots: K-means on merged dataset (15 households). Pulsing dots: live MQTT from your
+          ESP32s — charge / discharge / balanced from SURPLUS/DEFICIT and solar watts.
         </p>
         {clusterError && (
           <p className="text-sm text-rose-800 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 mb-3">
@@ -65,7 +78,11 @@ export default function DashboardPage({ operatorName = 'Barangay Operator' }) {
           <p className="text-sm text-sk-ink-muted py-16 text-center">Loading clustering…</p>
         ) : (
           <>
-            <ClusterScatterPlot households={clusterData?.households ?? []} />
+            <ClusterScatterPlot
+              households={clusterData?.households ?? []}
+              liveHouseholds={liveHouseholds}
+            />
+            <ClusterMetrics metrics={clusterData?.metrics} summary={clusterData?.summary} />
             {clusterData?.summary && (
               <p className="text-[10px] text-sk-ink-muted mt-3 text-center">
                 {clusterData.total_rows} CSV rows · {clusterData.households?.length} households clustered

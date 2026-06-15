@@ -1,21 +1,60 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Card from '../components/ui/Card';
 import Toggle from '../components/ui/Toggle';
+import { fetchMqttStatus } from '../services/liveApi';
+
+const DEFAULT_BROKER = '192.168.55.113';
 
 export default function SettingsPage() {
   const [barangayName, setBarangayName] = useState('Barangay Mabini');
   const [contactEmail, setContactEmail] = useState('operator@barangay.gov.ph');
-  const [broker, setBroker] = useState('192.168.1.100');
+  const [broker, setBroker] = useState(DEFAULT_BROKER);
   const [port, setPort] = useState('1883');
   const [autoDisc, setAutoDisc] = useState(true);
   const [emailNotif, setEmailNotif] = useState(true);
   const [battLow, setBattLow] = useState('20');
   const [saved, setSaved] = useState(false);
+  const [mqttStatus, setMqttStatus] = useState({
+    connected: false,
+    last_message_at: null,
+    topic_prefix: 'solar/#',
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const s = await fetchMqttStatus();
+        if (!cancelled) {
+          setMqttStatus(s);
+          if (s.broker) {
+            const [host, p] = s.broker.split(':');
+            if (host) setBroker(host);
+            if (p) setPort(p);
+          }
+        }
+      } catch {
+        /* backend offline — keep defaults */
+      }
+    }
+    load();
+    const id = setInterval(load, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
 
   const doSave = () => {
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   };
+
+  const lastSyncLabel = mqttStatus.last_message_at
+    ? new Date(mqttStatus.last_message_at).toLocaleString()
+    : mqttStatus.connected
+      ? 'Broker connected — waiting for ESP32'
+      : 'Backend not receiving MQTT';
 
   return (
     <div className="space-y-4">
@@ -53,13 +92,24 @@ export default function SettingsPage() {
 
         <Card title="MQTT & Hardware">
           <div className="grid grid-cols-[1fr_80px] gap-3 mb-4">
-            <Field label="Broker Address" value={broker} onChange={setBroker} />
+            <Field label="Broker Address (laptop IP)" value={broker} onChange={setBroker} />
             <Field label="Port" value={port} onChange={setPort} />
           </div>
+          <p className="text-xs text-sk-ink-muted mb-3">
+            ESP32 sketches use this IP in <code className="text-xs">mqttBroker</code>. Backend subscribes on{' '}
+            <strong>127.0.0.1</strong> on the same laptop.
+          </p>
           <div className="flex items-center justify-between py-2">
             <span className="text-sm font-semibold">Auto Device Discovery</span>
             <Toggle on={autoDisc} onChange={setAutoDisc} label="Auto device discovery" />
           </div>
+          <dl className="mt-3 space-y-2 text-sm rounded-lg border border-sk-card-border/30 bg-white/50 p-3">
+            <InfoRow
+              label="Bridge status"
+              value={mqttStatus.connected ? 'Connected to broker' : 'Not connected'}
+            />
+            <InfoRow label="Topics" value="solar/A/* · solar/B/*" />
+          </dl>
         </Card>
 
         <Card title="Preferences">
@@ -72,9 +122,9 @@ export default function SettingsPage() {
 
         <Card title="System">
           <dl className="space-y-2 text-sm">
-            <InfoRow label="App mode" value="Simulation + live transfer UI" />
+            <InfoRow label="App mode" value="Live MQTT + Greedy hardware" />
             <InfoRow label="Version" value="v0.9-alpha" />
-            <InfoRow label="Last sync" value="Not connected to MQTT broker" />
+            <InfoRow label="Last ESP32 message" value={lastSyncLabel} />
           </dl>
         </Card>
       </div>

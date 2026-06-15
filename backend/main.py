@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from algorithms.greedy import simulate_greedy
 from clustering import get_household_cluster, run_clustering
+from live_clustering import run_live_clustering
 from config import SIM_DAYS_DEFAULT
 from database import (
     db_status,
@@ -30,6 +31,7 @@ from database import (
     upsert_user_profile,
 )
 from auth import auth_configured, get_auth_user_id, get_token_email
+from mqtt_bridge import get_live_payload, get_mqtt_status, start_mqtt_bridge
 
 # On Vercel Services, routePrefix "/api" is stripped before the request hits FastAPI.
 # Locally (and on Render), routes keep the "/api" prefix to match the Vite proxy.
@@ -76,6 +78,7 @@ class ProfileRequest(BaseModel):
 def on_startup() -> None:
     app.state.db_ready = False
     app.state.db_error = None
+    app.state.mqtt_bridge = start_mqtt_bridge()
     try:
         init_db()
         seed_database()
@@ -88,10 +91,23 @@ def on_startup() -> None:
 def health() -> dict:
     payload = {"status": "ok", "service": "solarkapitbahay-api", **db_status()}
     payload["auth_configured"] = auth_configured()
+    payload["mqtt_bridge"] = getattr(app.state, "mqtt_bridge", None)
+    payload["mqtt"] = get_mqtt_status()
     if getattr(app.state, "db_error", None):
         payload["startup_error"] = app.state.db_error
         payload["status"] = "degraded"
     return payload
+
+
+@router.get("/live")
+def live_telemetry() -> dict:
+    """Latest MQTT readings from solar/A/* and solar/B/* (ESP32 firmware)."""
+    return get_live_payload()
+
+
+@router.get("/live/status")
+def live_mqtt_status() -> dict:
+    return get_mqtt_status()
 
 
 @router.get("/auth/status")
@@ -192,9 +208,21 @@ def simulation_run_detail(run_id: int) -> dict:
 
 
 @router.get("/clustering")
-def clustering_overview() -> dict:
+def clustering_overview(include_live: bool = True) -> dict:
     """K-means on merged CSV — charge/discharge indicators for all households."""
-    return run_clustering()
+    data = run_clustering()
+    if include_live:
+        live = run_live_clustering()
+        data["live_households"] = live["households"]
+        data["live_summary"] = live["summary"]
+        data["live_mqtt"] = live.get("mqtt")
+    return data
+
+
+@router.get("/clustering/live")
+def clustering_live_only() -> dict:
+    """Live House A/B clustering from MQTT only."""
+    return run_live_clustering()
 
 
 @router.get("/clustering/{household_id}")

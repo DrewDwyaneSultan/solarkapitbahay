@@ -1,11 +1,13 @@
 /*
- * SolarKapitBahay — ESP32_B2 + 1602 LCD Keypad Shield + MQTT
- * Same pin wiring as A1 — upload only to House B board.
+ * SolarKapitBahay — ESP32_B2 + 16x2 I2C LCD + MQTT
+ * Same I2C wiring as A1 — upload only to House B board.
  */
 
 #include <WiFi.h>
 #include <PubSubClient.h>
-#include <LiquidCrystal.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include "SolarKapitBahay_Sensors.h"
 
 const char* WIFI_SSID     = "SKYFiber_MESH_BEF5";
 const char* WIFI_PASSWORD = "548251144";
@@ -15,16 +17,11 @@ const uint16_t MQTT_PORT  = 1883;
 const char* DEVICE_ID  = "ESP32_B2";
 const char* HOUSE_NAME = "House B";
 
-#define LCD_RS  2
-#define LCD_EN  4
-#define LCD_D4  5
-#define LCD_D5  15
-#define LCD_D6  16
-#define LCD_D7  17
-#define LCD_BL  -1   // Bla->5V Blk->GND; or Bla->18 Blk->GND and set LCD_BL 18
-#define KEYPAD_PIN -1
+#define I2C_SDA 21
+#define I2C_SCL 22
+#define LCD_I2C_ADDR 0x27
 
-LiquidCrystal lcd(LCD_RS, LCD_EN, LCD_D4, LCD_D5, LCD_D6, LCD_D7);
+LiquidCrystal_I2C lcd(LCD_I2C_ADDR, 16, 2);
 WiFiClient wifiClient;
 PubSubClient mqtt(wifiClient);
 
@@ -54,25 +51,11 @@ void lcdShow(const char* line1, const char* line2) {
 }
 
 void initLcd() {
-  if (LCD_BL >= 0) {
-    pinMode(LCD_BL, OUTPUT);
-    digitalWrite(LCD_BL, HIGH);
-  }
-  lcd.begin(16, 2);
+  Wire.begin(I2C_SDA, I2C_SCL);
+  lcd.init();
+  lcd.backlight();
   lcdShow("SolarKapitBahay", DEVICE_ID);
   delay(800);
-}
-
-const char* readKeypad() {
-  if (KEYPAD_PIN < 0) return "";
-  int v = analogRead(KEYPAD_PIN);
-  if (v > 1000) return "";
-  if (v < 50) return "SEL";
-  if (v < 250) return "L";
-  if (v < 450) return "U";
-  if (v < 650) return "D";
-  if (v < 850) return "R";
-  return "?";
 }
 
 void updateLcdLive(const char* status) {
@@ -118,9 +101,8 @@ void connectMqtt() {
 }
 
 void publishTelemetry() {
-  lastSolarW = 120.0f + (random(0, 800) / 10.0f);
-  lastLoadW = 60.0f + (random(0, 400) / 10.0f);
-  float batteryPct = 45.0f + (random(0, 300) / 10.0f);
+  float batteryPct = 0.0f;
+  skbReadPower(lastSolarW, lastLoadW, batteryPct);
 
   char payload[192];
   snprintf(
@@ -140,9 +122,8 @@ void publishTelemetry() {
 void setup() {
   Serial.begin(115200);
   randomSeed(esp_random());
-  if (KEYPAD_PIN >= 0) analogSetPinAttenuation(KEYPAD_PIN, ADC_11db);
-
   initLcd();
+  skbInitSensors();
   buildTopics();
   connectWiFi();
   connectMqtt();
@@ -153,15 +134,6 @@ void loop() {
   if (WiFi.status() != WL_CONNECTED) connectWiFi();
   if (!mqtt.connected()) connectMqtt();
   mqtt.loop();
-
-  const char* key = readKeypad();
-  if (key[0] != '\0') {
-    char line2[17];
-    snprintf(line2, sizeof(line2), "Key: %s", key);
-    lcdShow(HOUSE_NAME, line2);
-    delay(300);
-    updateLcdLive("ONLINE");
-  }
 
   if (millis() - lastPublishMs >= PUBLISH_INTERVAL_MS) {
     lastPublishMs = millis();

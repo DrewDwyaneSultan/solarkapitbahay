@@ -4,12 +4,7 @@ import Toggle from '../components/ui/Toggle';
 import { SunLogoIcon } from '../components/icons/NavIcons';
 import TransferAnimationOverlay from '../components/energy/TransferAnimationOverlay';
 import { getHouseCards, useLiveData } from '../hooks/useLiveData';
-import {
-  initialAutomationLog,
-  initialDevices,
-  initialTxHistory,
-  surplusSources,
-} from '../constants/energyTransfer';
+import { initialAutomationLog } from '../constants/energyTransfer';
 
 function fmtCountdown(sec) {
   const m = Math.floor(sec / 60);
@@ -27,9 +22,8 @@ export default function EnergyTransferPage() {
   const [recipients, setRecipients] = useState([
     { id: 1, house: 'House B', need: 150, amount: 80 },
   ]);
-  const [devices, setDevices] = useState(initialDevices);
   const [scanning, setScanning] = useState(false);
-  const [txHistory, setTxHistory] = useState(initialTxHistory);
+  const [txHistory, setTxHistory] = useState([]);
   const [txLog] = useState(initialAutomationLog);
   const [showTransferAnim, setShowTransferAnim] = useState(false);
 
@@ -37,6 +31,16 @@ export default function EnergyTransferPage() {
     const id = setInterval(() => setCountdown((c) => (c <= 0 ? 300 : c - 1)), 1000);
     return () => clearInterval(id);
   }, []);
+
+  const surplusSources = liveData.surplusSources ?? [];
+  const devices = liveData.devices?.length ? liveData.devices : [];
+  const mqttLive = liveData.mqttConnected;
+
+  useEffect(() => {
+    if (liveData.transferLog?.length) {
+      setTxHistory(liveData.transferLog);
+    }
+  }, [liveData.transferLog]);
 
   const selectedSurplus = surplusSources.find((s) => s.value === fromHouse)?.surplus ?? 0;
   const totalSending = recipients.reduce((sum, r) => sum + r.amount, 0);
@@ -91,11 +95,18 @@ export default function EnergyTransferPage() {
           <ModeTab id="manual" label="Manual Override" active={mode === 'manual'} onClick={() => setMode('manual')} tone="amber" />
         </div>
 
+        <div className="flex items-center gap-2 text-xs">
+          <span className={`w-2 h-2 rounded-full ${mqttLive ? 'bg-emerald-600 animate-pulse' : 'bg-amber-500'}`} />
+          <span className="text-sk-ink-muted">
+            {mqttLive ? 'Live MQTT · solar/A & solar/B' : 'Mock data — start backend + ESP32s for live readings'}
+          </span>
+        </div>
+
         <Card title="Live Snapshot">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {[
-              { label: 'Solar Generation', val: liveData.houseA.solar, unit: 'W', icon: '☀️' },
-              { label: 'Community Load', val: liveData.houseA.load + liveData.houseB.load, unit: 'W', icon: '🏠' },
+              { label: 'House A Solar', val: liveData.houseA.solar, unit: 'W', icon: '☀️' },
+              { label: 'House B Solar', val: liveData.houseB.solar, unit: 'W', icon: '☀️' },
               { label: 'Battery SOC', val: Math.round(liveData.battery), unit: '%', icon: '🔋' },
             ].map((row) => (
               <div key={row.label} className="rounded-xl border border-sk-card-border/40 bg-white/70 p-3">
@@ -262,15 +273,22 @@ function ModeTab({ label, active, onClick, tone }) {
 
 function HouseStatusCard({ house }) {
   const positive = house.surplus >= 0;
+  const transferring = house.transfer === 'SENDING';
   return (
     <div className="rounded-xl border border-sk-card-border/40 bg-white/60 p-4">
       <div className="flex justify-between items-start mb-3">
         <p className="font-semibold">{house.name}</p>
         <p className={`font-mono font-bold ${positive ? 'text-emerald-800' : 'text-rose-800'}`}>
-          {positive ? '+' : ''}{house.surplus}W
+          {positive ? '+' : ''}{Math.round(house.surplus)}W
         </p>
       </div>
+      <p className="text-xs font-mono text-sk-ink-muted mb-2">
+        {house.solar}W solar · {house.status} {house.online ? '· online' : '· offline'}
+      </p>
       <StatusPill ok={house.relay} label={house.relay ? 'Relay ON' : 'Relay OFF'} />
+      {transferring && (
+        <StatusPill ok label="Transferring ⚡" />
+      )}
     </div>
   );
 }
