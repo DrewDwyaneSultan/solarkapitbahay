@@ -21,7 +21,8 @@ Solar KapitBahay uses **Supabase Auth** for sign-up, sign-in, and Google account
 
 | Variable | Where to find it |
 |----------|------------------|
-| `SUPABASE_JWT_SECRET` | Supabase → Project Settings → API → JWT Settings → JWT Secret |
+| `SUPABASE_JWT_SECRET` | Supabase → Project Settings → API → JWT Settings → **Legacy JWT Secret** (HS256) |
+| `SUPABASE_URL` | Same as `VITE_SUPABASE_URL` — required on backend for **ES256** tokens (new Supabase projects) |
 | `DATABASE_URL` | Supabase pooler URI (see `docs/DEPLOY_VERCEL.md`) |
 
 Copy values into `.env` locally and into **Vercel → Settings → Environment Variables** for production.
@@ -33,6 +34,7 @@ Copy values into `.env` locally and into **Vercel → Settings → Environment V
 | `VITE_SUPABASE_URL` | Yes | Yes |
 | `VITE_SUPABASE_ANON_KEY` | Yes | Yes |
 | `SUPABASE_JWT_SECRET` | Yes (legacy JWT secret) | Yes |
+| `SUPABASE_URL` | Yes (same as VITE_SUPABASE_URL) | Yes |
 | `DATABASE_URL` | Yes (pooler URI) | Yes (transaction pooler `:6543` recommended) |
 | `VITE_API_URL` | Leave empty | Leave empty |
 

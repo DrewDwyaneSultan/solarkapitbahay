@@ -84,9 +84,12 @@ function App() {
               {auth.authError}
             </p>
             <p className="text-xs text-sk-ink-muted mb-4">
-              Add <code className="text-xs">SUPABASE_JWT_SECRET</code> (legacy JWT secret) to{' '}
-              <code className="text-xs">.env</code>, then restart <code className="text-xs">npm run dev:backend</code>.
-              First-time users also need the profile step after this is fixed.
+              On Vercel, set <code className="text-xs">SUPABASE_URL</code> (same value as{' '}
+              <code className="text-xs">VITE_SUPABASE_URL</code>) and{' '}
+              <code className="text-xs">SUPABASE_JWT_SECRET</code> (legacy JWT secret), then redeploy.
+              Locally, add both to <code className="text-xs">.env</code> and restart{' '}
+              <code className="text-xs">npm run dev:backend</code>. New Supabase projects use ES256
+              tokens — the URL is required for verification.
             </p>
             <button
               type="button"

@@ -124,13 +124,17 @@ def _operator_barangay(profile: dict = Depends(_require_operator)) -> dict:
 def on_startup() -> None:
     app.state.db_ready = False
     app.state.db_error = None
+    app.state.seed_error = None
     app.state.mqtt_bridge = start_mqtt_bridge()
     try:
         init_db()
-        seed_database()
         app.state.db_ready = True
     except Exception as exc:
         app.state.db_error = str(exc)
+    try:
+        seed_database()
+    except Exception as exc:
+        app.state.seed_error = str(exc)
 
 
 @router.get("/health")
@@ -142,6 +146,10 @@ def health() -> dict:
     if getattr(app.state, "db_error", None):
         payload["startup_error"] = app.state.db_error
         payload["status"] = "degraded"
+    if getattr(app.state, "seed_error", None):
+        payload["seed_error"] = app.state.seed_error
+        if payload["status"] == "ok":
+            payload["status"] = "degraded"
     return payload
 
 

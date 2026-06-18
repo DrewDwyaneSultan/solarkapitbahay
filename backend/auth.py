@@ -8,32 +8,82 @@ from typing import Any
 import jwt
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jwt import PyJWKClient
 
 _bearer = HTTPBearer(auto_error=False)
+_jwks_client: PyJWKClient | None = None
 
 
 def _jwt_secret() -> str | None:
-    return os.getenv("SUPABASE_JWT_SECRET") or os.getenv("JWT_SECRET")
+    raw = os.getenv("SUPABASE_JWT_SECRET") or os.getenv("JWT_SECRET")
+    return raw.strip() if raw else None
+
+
+def _supabase_url() -> str | None:
+    raw = os.getenv("SUPABASE_URL") or os.getenv("VITE_SUPABASE_URL")
+    if not raw:
+        return None
+    return raw.rstrip("/")
+
+
+def _get_jwks_client() -> PyJWKClient | None:
+    global _jwks_client
+    base = _supabase_url()
+    if not base:
+        return None
+    if _jwks_client is None:
+        _jwks_client = PyJWKClient(f"{base}/auth/v1/.well-known/jwks.json", cache_keys=True)
+    return _jwks_client
 
 
 def auth_configured() -> bool:
-    return bool(_jwt_secret())
+    return bool(_jwt_secret()) or bool(_supabase_url())
 
 
 def decode_supabase_token(token: str) -> dict[str, Any]:
-    secret = _jwt_secret()
-    if not secret:
+    if not auth_configured():
         raise HTTPException(
             status_code=503,
-            detail="Auth not configured. Set SUPABASE_JWT_SECRET on the backend.",
+            detail="Auth not configured. Set SUPABASE_JWT_SECRET and/or SUPABASE_URL on the backend.",
         )
+
     try:
+        header = jwt.get_unverified_header(token)
+    except jwt.PyJWTError as exc:
+        raise HTTPException(status_code=401, detail="Invalid or expired token.") from exc
+
+    alg = header.get("alg", "HS256")
+
+    try:
+        if alg == "ES256":
+            client = _get_jwks_client()
+            if client is None:
+                raise HTTPException(
+                    status_code=503,
+                    detail="ES256 tokens require SUPABASE_URL (same as VITE_SUPABASE_URL) on the backend.",
+                )
+            signing_key = client.get_signing_key_from_jwt(token)
+            return jwt.decode(
+                token,
+                signing_key.key,
+                algorithms=["ES256"],
+                audience="authenticated",
+            )
+
+        secret = _jwt_secret()
+        if not secret:
+            raise HTTPException(
+                status_code=503,
+                detail="HS256 tokens require SUPABASE_JWT_SECRET on the backend.",
+            )
         return jwt.decode(
             token,
             secret,
             algorithms=["HS256"],
             audience="authenticated",
         )
+    except HTTPException:
+        raise
     except jwt.PyJWTError as exc:
         raise HTTPException(status_code=401, detail="Invalid or expired token.") from exc
 

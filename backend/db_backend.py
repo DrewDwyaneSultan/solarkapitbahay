@@ -60,11 +60,10 @@ class _PgConn:
 
     def execute(self, sql: str, params: tuple | list = ()) -> _PgConn:
         self._cur.execute(sql.replace("?", "%s"), params)
-        if self._cur.description and "INSERT" in sql.upper():
-            # RETURNING id was used
+        if self._cur.description and "RETURNING" in sql.upper():
             row = self._cur.fetchone()
             if row:
-                self._last_id = int(row[0])
+                self._last_id = row[0]
         return self
 
     def executemany(self, sql: str, params_list: list[tuple]) -> None:
@@ -171,6 +170,8 @@ def insert_returning_id(conn: Any, sql: str, params: tuple) -> int:
         if "RETURNING" not in sql.upper():
             sql = sql.rstrip().rstrip(";") + " RETURNING id"
         conn.execute(sql, params)
+        if conn.lastrowid is None:
+            raise RuntimeError("INSERT did not return an id")
         return int(conn.lastrowid)
     cur = conn.execute(sql, params)
     return int(cur.lastrowid)
