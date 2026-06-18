@@ -26,7 +26,13 @@ const headerSubtitles = {
   settings: 'Operator Settings',
 };
 
-export default function OperatorDashboard({ operator, barangayName, onLogout }) {
+export default function OperatorDashboard({
+  operator,
+  barangayName,
+  barangayCode,
+  accessToken,
+  onLogout,
+}) {
   const [activePage, setActivePage] = useState('dashboard');
 
   const PageView = pageComponents[activePage] ?? (() => <ComingSoonPage pageId={activePage} />);
@@ -42,6 +48,8 @@ export default function OperatorDashboard({ operator, barangayName, onLogout }) 
     >
       {activePage === 'dashboard' ? (
         <DashboardPage operatorName={operator?.name} />
+      ) : activePage === 'households' ? (
+        <HouseholdsPage accessToken={accessToken} barangayCode={barangayCode} />
       ) : (
         <PageView />
       )}

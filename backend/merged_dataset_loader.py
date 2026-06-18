@@ -95,6 +95,7 @@ def expand_to_household_rows(
     path: Path | None = None,
     num_households: int = NUM_HOUSEHOLDS,
     seed: int = 42,
+    id_prefix: str = "HH",
 ) -> list[dict[str, str]]:
     src = path or resolve_dataset_path()
     if src is None or not src.is_file():
@@ -107,7 +108,7 @@ def expand_to_household_rows(
     rows: list[dict[str, str]] = []
     for h_idx in range(num_households):
         rng = random.Random(seed + h_idx * 97)
-        hid = f"HH-{h_idx + 1:02d}"
+        hid = f"{id_prefix}-{h_idx + 1:02d}"
         hourly_surplus: list[float] = []
         hourly_load: list[float] = []
         hourly_solar: list[float] = []

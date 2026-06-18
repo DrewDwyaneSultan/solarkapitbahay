@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import BrandLogo from './components/BrandLogo';
 import Toggle from './components/ui/Toggle';
 import { supabase, isSupabaseConfigured } from './lib/supabaseClient';
-import { fetchHouseholdOptions, saveProfile } from './services/authApi';
+import { saveProfile } from './services/authApi';
+import { lookupBarangay } from './services/registrationApi';
 import { profileToUser } from './hooks/useAuth';
 
 const demoAccounts = {
@@ -41,6 +42,10 @@ export default function Login({
   const [displayName, setDisplayName] = useState('');
   const [address, setAddress] = useState('');
   const [householdId, setHouseholdId] = useState('');
+  const [barangayCode, setBarangayCode] = useState('');
+  const [householdCode, setHouseholdCode] = useState('');
+  const [barangayInfo, setBarangayInfo] = useState(null);
+  const [joinMode, setJoinMode] = useState('existing');
   const [householdOptions, setHouseholdOptions] = useState([]);
   const [hasSolar, setHasSolar] = useState(false);
   const [hasBattery, setHasBattery] = useState(false);
@@ -56,10 +61,29 @@ export default function Login({
 
   useEffect(() => {
     if (mode !== 'complete' || role !== 'household') return;
-    fetchHouseholdOptions()
-      .then((rows) => setHouseholdOptions(rows))
-      .catch(() => setHouseholdOptions([]));
-  }, [mode, role]);
+    const code = barangayCode.trim().toUpperCase();
+    if (!code) {
+      setBarangayInfo(null);
+      setHouseholdOptions([]);
+      return;
+    }
+    let cancelled = false;
+    lookupBarangay(code)
+      .then((bg) => {
+        if (cancelled) return;
+        setBarangayInfo(bg);
+        setHouseholdOptions(bg?.households ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setBarangayInfo(null);
+          setHouseholdOptions([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, role, barangayCode]);
 
   const resetMessages = () => {
     setError('');
@@ -126,6 +150,20 @@ export default function Login({
       setError('Session expired. Please sign in again.');
       return;
     }
+    if (role === 'household') {
+      if (!barangayCode.trim()) {
+        setError('Enter the barangay code from your operator.');
+        return;
+      }
+      if (!barangayInfo) {
+        setError('Barangay code not found. Check with your operator.');
+        return;
+      }
+      if (joinMode === 'existing' && !householdId && !householdCode.trim()) {
+        setError('Select a home or enter the household code from your operator.');
+        return;
+      }
+    }
     resetMessages();
     setBusy(true);
     try {
@@ -133,7 +171,11 @@ export default function Login({
         role,
         display_name: displayName.trim(),
         address: address.trim() || null,
-        household_id: role === 'household' ? householdId || null : null,
+        barangay_code: role === 'household' ? barangayCode.trim().toUpperCase() || null : null,
+        household_id:
+          role === 'household' && joinMode === 'existing' ? householdId || null : null,
+        household_code:
+          role === 'household' && joinMode === 'existing' ? householdCode.trim().toUpperCase() || null : null,
         has_solar: hasSolar,
         has_battery: hasBattery,
         battery_model: hasBattery ? batteryModel.trim() || null : null,
@@ -273,24 +315,89 @@ export default function Login({
                 <Field label="Display name" value={displayName} onChange={setDisplayName} required />
                 {role === 'household' && (
                   <>
+                    <Field
+                      label="Barangay code"
+                      value={barangayCode}
+                      onChange={setBarangayCode}
+                      placeholder="SK-MABINI-DEMO"
+                      required
+                    />
+                    {barangayCode && !barangayInfo && (
+                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                        Checking code… or code not found. Ask your barangay operator for the correct
+                        code.
+                      </p>
+                    )}
+                    {barangayInfo && (
+                      <p className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2">
+                        Joining <strong>{barangayInfo.name}</strong>
+                        {barangayInfo.city_municipality ? ` · ${barangayInfo.city_municipality}` : ''}
+                      </p>
+                    )}
+                    {barangayInfo && (
+                      <div className="flex bg-white/70 p-1 rounded-lg border border-sk-card-border/50">
+                        <button
+                          type="button"
+                          onClick={() => setJoinMode('existing')}
+                          className={`flex-1 py-1 text-[10px] uppercase tracking-widest font-bold rounded-md ${
+                            joinMode === 'existing' ? 'bg-white text-sk-ink shadow-sm' : 'text-sk-ink-muted'
+                          }`}
+                        >
+                          Pre-registered home
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setJoinMode('new');
+                            setHouseholdId('');
+                            setHouseholdCode('');
+                          }}
+                          className={`flex-1 py-1 text-[10px] uppercase tracking-widest font-bold rounded-md ${
+                            joinMode === 'new' ? 'bg-white text-sk-ink shadow-sm' : 'text-sk-ink-muted'
+                          }`}
+                        >
+                          Register new house
+                        </button>
+                      </div>
+                    )}
+                    {barangayInfo && joinMode === 'existing' && (
+                      <>
+                        <Field
+                          label="Household code (from operator)"
+                          value={householdCode}
+                          onChange={setHouseholdCode}
+                          placeholder="SK-MABINI-DEMO-H01"
+                        />
+                        <div className="space-y-1.5">
+                          <label className="block text-[10px] font-bold uppercase tracking-widest text-sk-ink-muted">
+                            Or pick from list
+                          </label>
+                          <select
+                            value={householdId}
+                            onChange={(e) => {
+                              setHouseholdId(e.target.value);
+                              const picked = householdOptions.find((h) => h.id === e.target.value);
+                              if (picked?.household_code) setHouseholdCode(picked.household_code);
+                            }}
+                            className="w-full h-10 rounded-md border border-sk-card-border/60 bg-white px-3 text-sm text-sk-ink"
+                          >
+                            <option value="">Select a pre-registered home…</option>
+                            {householdOptions.map((hh) => (
+                              <option key={hh.id} value={hh.id}>
+                                {hh.id} — {hh.head_name ?? 'Household'}
+                                {hh.household_code ? ` (${hh.household_code})` : ''}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </>
+                    )}
+                    {barangayInfo && joinMode === 'new' && (
+                      <p className="text-xs text-sk-ink-muted bg-sk-placeholder/40 rounded-md px-3 py-2">
+                        Your registration will be sent to the barangay operator for approval.
+                      </p>
+                    )}
                     <Field label="Address" value={address} onChange={setAddress} />
-                    <div className="space-y-1.5">
-                      <label className="block text-[10px] font-bold uppercase tracking-widest text-sk-ink-muted">
-                        Link to household (optional)
-                      </label>
-                      <select
-                        value={householdId}
-                        onChange={(e) => setHouseholdId(e.target.value)}
-                        className="w-full h-10 rounded-md border border-sk-card-border/60 bg-white px-3 text-sm text-sk-ink"
-                      >
-                        <option value="">New registration — pending approval</option>
-                        {householdOptions.map((hh) => (
-                          <option key={hh.id} value={hh.id}>
-                            {hh.id} — {hh.head_name ?? hh.circuit_name ?? 'Household'}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
                     <HouseholdEquipmentFields
                       hasSolar={hasSolar}
                       setHasSolar={setHasSolar}

@@ -17,20 +17,31 @@ from clustering import get_household_cluster, run_clustering
 from live_clustering import run_live_clustering
 from config import SIM_DAYS_DEFAULT
 from database import (
+    approve_registration,
     db_status,
     get_active_dataset,
+    get_barangay_for_operator,
     get_household,
     get_run,
     get_user_profile,
     household_count,
     init_db,
     list_households,
+    list_registrations,
     list_runs,
+    lookup_barangay_public,
+    register_barangay,
+    reject_registration,
     save_run,
     seed_database,
     upsert_user_profile,
 )
 from auth import auth_configured, get_auth_user_id, get_token_email
+from notifications import (
+    email_configured,
+    send_registration_approved,
+    send_registration_rejected,
+)
 from mqtt_bridge import get_live_payload, get_mqtt_status, start_mqtt_bridge
 
 # On Vercel Services, routePrefix "/api" is stripped before the request hits FastAPI.
@@ -68,10 +79,45 @@ class ProfileRequest(BaseModel):
     display_name: str = Field(min_length=1, max_length=120)
     address: str | None = None
     household_id: str | None = None
+    household_code: str | None = None
+    barangay_code: str | None = None
     has_solar: bool = False
     has_battery: bool = False
     battery_model: str | None = None
     battery_capacity_kwh: float | None = None
+
+
+class BarangayRegisterRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    contact_email: str = Field(min_length=3, max_length=200)
+    city_municipality: str | None = None
+    province: str | None = None
+    location_lat: float | None = None
+    location_lon: float | None = None
+
+
+class RegistrationRejectRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=500)
+
+
+def _require_profile(user_id: str = Depends(get_auth_user_id)) -> dict:
+    profile = get_user_profile(user_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found.")
+    return profile
+
+
+def _require_operator(profile: dict = Depends(_require_profile)) -> dict:
+    if profile.get("role") != "operator":
+        raise HTTPException(status_code=403, detail="Operator access required.")
+    return profile
+
+
+def _operator_barangay(profile: dict = Depends(_require_operator)) -> dict:
+    bg = get_barangay_for_operator(profile["id"])
+    if not bg:
+        raise HTTPException(status_code=404, detail="Register your barangay first.")
+    return bg
 
 
 @app.on_event("startup")
@@ -136,6 +182,8 @@ def auth_save_profile(
             role=body.role,
             display_name=body.display_name.strip(),
             household_id=body.household_id,
+            household_code=body.household_code,
+            barangay_code=body.barangay_code,
             address=body.address,
             has_solar=body.has_solar,
             has_battery=body.has_battery,
@@ -144,6 +192,100 @@ def auth_save_profile(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/barangays/lookup")
+def barangay_lookup(code: str) -> dict:
+    row = lookup_barangay_public(code)
+    if not row:
+        raise HTTPException(status_code=404, detail="Barangay code not found.")
+    return row
+
+
+@router.get("/barangays/mine")
+def barangay_mine(profile: dict = Depends(_require_profile)) -> dict:
+    if profile.get("role") != "operator":
+        raise HTTPException(status_code=403, detail="Operators only.")
+    bg = get_barangay_for_operator(profile["id"])
+    if not bg:
+        raise HTTPException(status_code=404, detail="No barangay registered yet.")
+    return dict(bg)
+
+
+@router.post("/barangays/register")
+def barangay_register(
+    body: BarangayRegisterRequest,
+    profile: dict = Depends(_require_operator),
+) -> dict:
+    try:
+        return register_barangay(
+            profile["id"],
+            name=body.name,
+            contact_email=body.contact_email,
+            city_municipality=body.city_municipality,
+            province=body.province,
+            location_lat=body.location_lat,
+            location_lon=body.location_lon,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/registrations")
+def registrations_list(
+    status: str = "pending",
+    barangay: dict = Depends(_operator_barangay),
+) -> dict:
+    rows = list_registrations(int(barangay["id"]), status=status or None)
+    return {"registrations": rows, "count": len(rows)}
+
+
+@router.patch("/registrations/{registration_id}/approve")
+def registration_approve(
+    registration_id: int,
+    profile: dict = Depends(_require_operator),
+    barangay: dict = Depends(_operator_barangay),
+) -> dict:
+    try:
+        result = approve_registration(registration_id, profile["id"])
+        if int(result.get("barangay_id", 0)) != int(barangay["id"]):
+            raise HTTPException(status_code=403, detail="Registration not in your barangay.")
+        send_registration_approved(
+            to=result["applicant_email"],
+            display_name=result["display_name"],
+            barangay_name=barangay.get("name", "your barangay"),
+            household_id=result.get("household_id", ""),
+        )
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.patch("/registrations/{registration_id}/reject")
+def registration_reject(
+    registration_id: int,
+    body: RegistrationRejectRequest,
+    profile: dict = Depends(_require_operator),
+    barangay: dict = Depends(_operator_barangay),
+) -> dict:
+    try:
+        result = reject_registration(registration_id, profile["id"], body.reason)
+        if int(result.get("barangay_id", 0)) != int(barangay["id"]):
+            raise HTTPException(status_code=403, detail="Registration not in your barangay.")
+        send_registration_rejected(
+            to=result["applicant_email"],
+            display_name=result["display_name"],
+            barangay_name=barangay.get("name", "your barangay"),
+            reason=body.reason,
+        )
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/notifications/status")
+def notifications_status() -> dict:
+    return {"email_configured": email_configured()}
 
 
 @router.post("/seed")
@@ -234,9 +376,18 @@ def clustering_household(household_id: str) -> dict:
 
 
 @router.get("/households")
-def households_list() -> dict:
-    """All households from the seeded database."""
-    return {"households": list_households(), "count": household_count()}
+def households_list(barangay_code: str | None = None, claimable_only: bool = False) -> dict:
+    """Households from the database, optionally filtered by barangay code."""
+    barangay_id = None
+    if barangay_code:
+        from database import get_barangay_by_code
+
+        bg = get_barangay_by_code(barangay_code)
+        if not bg:
+            raise HTTPException(status_code=404, detail="Barangay code not found.")
+        barangay_id = int(bg["id"])
+    rows = list_households(barangay_id=barangay_id, claimable_only=claimable_only)
+    return {"households": rows, "count": len(rows)}
 
 
 @router.get("/households/{household_id}")

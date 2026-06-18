@@ -24,7 +24,9 @@ export async function fetchMe(accessToken) {
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail ?? `Auth failed (${res.status})`);
+    const err = new Error(body.detail ?? `Auth failed (${res.status})`);
+    err.status = res.status;
+    throw err;
   }
   return res.json();
 }
@@ -42,8 +44,11 @@ export async function saveProfile(accessToken, profile) {
   return res.json();
 }
 
-export async function fetchHouseholdOptions() {
-  const res = await fetch(`${API_BASE}/api/households`);
+export async function fetchHouseholdOptions(barangayCode) {
+  const params = barangayCode
+    ? `?barangay_code=${encodeURIComponent(barangayCode)}&claimable_only=true`
+    : '';
+  const res = await fetch(`${API_BASE}/api/households${params}`);
   if (!res.ok) throw new Error('Failed to load households.');
   const data = await res.json();
   return data.households ?? [];

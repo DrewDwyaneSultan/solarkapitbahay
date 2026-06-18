@@ -24,7 +24,16 @@ _default_house = {
     "wattage": 0.0,
     "status": "UNKNOWN",
     "transfer": "STOPPED",
+    "battery_voltage": 0.0,
+    "battery_percent": 0,
+    "battery_status": "UNKNOWN",
     "updated_at": None,
+}
+
+_battery_shared = {
+    "voltage": 0.0,
+    "percent": 0,
+    "status": "UNKNOWN",
 }
 
 _state: dict[str, Any] = {
@@ -56,22 +65,46 @@ def _other_label(code: str) -> str:
     return "House B" if code == "A" else "House A"
 
 
+_transfer_active = {"PREPARING", "TRANSFERRING", "SENDING"}
+
+
 def _on_message(_client: Any, _userdata: Any, msg: Any) -> None:
     topic = msg.topic
     payload = msg.payload.decode("utf-8", errors="replace").strip()
     parts = topic.split("/")
-    if len(parts) != 3 or parts[0] != "solar":
+    if len(parts) < 3 or parts[0] != "solar":
         return
 
     house_code = parts[1].upper()
-    metric = parts[2].lower()
     if house_code not in ("A", "B"):
         return
 
     with _lock:
+        _state["last_message_at"] = _now_iso()
+
+        # solar/A/battery/percent (House A only — shared community battery)
+        if len(parts) == 4 and parts[2].lower() == "battery":
+            metric = parts[3].lower()
+            if metric == "voltage":
+                _battery_shared["voltage"] = _parse_float(payload)
+            elif metric == "percent":
+                _battery_shared["percent"] = int(_parse_float(payload))
+            elif metric == "status":
+                _battery_shared["status"] = payload.upper()
+            if house_code == "A":
+                house = _state["houses"]["A"]
+                house["updated_at"] = _state["last_message_at"]
+                house["battery_voltage"] = _battery_shared["voltage"]
+                house["battery_percent"] = _battery_shared["percent"]
+                house["battery_status"] = _battery_shared["status"]
+            return
+
+        if len(parts) != 3:
+            return
+
         house = _state["houses"][house_code]
-        house["updated_at"] = _now_iso()
-        _state["last_message_at"] = house["updated_at"]
+        house["updated_at"] = _state["last_message_at"]
+        metric = parts[2].lower()
 
         if metric == "voltage":
             house["voltage"] = _parse_float(payload)
@@ -84,13 +117,13 @@ def _on_message(_client: Any, _userdata: Any, msg: Any) -> None:
         elif metric == "transfer":
             prev = _state["_prev_transfer"][house_code]
             house["transfer"] = payload.upper()
-            if house["transfer"] == "SENDING" and prev != "SENDING":
+            if house["transfer"] in _transfer_active and prev not in _transfer_active:
                 entry = {
                     "time": datetime.now().strftime("%I:%M %p").lstrip("0"),
                     "from": _house_label(house_code),
                     "to": _other_label(house_code),
                     "kw": f"{max(house['wattage'], 0) / 1000:.2f}",
-                    "status": "Success",
+                    "status": house["transfer"],
                 }
                 _state["transfer_log"].insert(0, entry)
                 _state["transfer_log"] = _state["transfer_log"][:_max_log]
@@ -111,6 +144,9 @@ def _on_disconnect(_client: Any, _userdata: Any, _rc: int, *_args: Any) -> None:
 
 def start_mqtt_bridge() -> dict[str, Any]:
     """Start background MQTT client. Safe to call if broker is down."""
+    if os.getenv("VERCEL"):
+        return {"started": False, "reason": "mqtt_disabled_on_vercel"}
+
     host = os.getenv("MQTT_BROKER_HOST", "127.0.0.1")
     port = int(os.getenv("MQTT_BROKER_PORT", "1883"))
 
@@ -156,8 +192,8 @@ def _is_online(house: dict[str, Any], stale_sec: int = 30) -> bool:
 def _relay_on(house_code: str, house: dict[str, Any], other: dict[str, Any]) -> bool:
     if house.get("status") == "SURPLUS":
         return True
-    # Receiving from neighbor when their transfer is SENDING
-    if other.get("transfer") == "SENDING":
+    other_xfer = str(other.get("transfer", "STOPPED")).upper()
+    if other_xfer in _transfer_active:
         return True
     return False
 
@@ -173,6 +209,7 @@ def get_live_payload() -> dict[str, Any]:
     with _lock:
         ha = dict(_state["houses"]["A"])
         hb = dict(_state["houses"]["B"])
+        bat = dict(_battery_shared)
         mqtt_ok = _state["client_connected"]
         broker = _state["broker"]
         last_msg = _state["last_message_at"]
@@ -185,6 +222,10 @@ def get_live_payload() -> dict[str, Any]:
     solar_b = hb["wattage"]
     load_a = _estimate_load(solar_a, ha["status"])
     load_b = _estimate_load(solar_b, hb["status"])
+
+    bat_pct = int(bat.get("percent") or ha.get("battery_percent") or 0)
+    bat_v = float(bat.get("voltage") or ha.get("battery_voltage") or 0)
+    bat_stat = str(bat.get("status") or ha.get("battery_status") or "UNKNOWN")
 
     return {
         "mqtt": {
@@ -204,6 +245,9 @@ def get_live_payload() -> dict[str, Any]:
             "transfer": ha["transfer"],
             "relay": _relay_on("A", ha, hb),
             "online": online_a,
+            "battery_voltage": bat_v,
+            "battery_percent": bat_pct,
+            "battery_status": bat_stat,
         },
         "houseB": {
             "name": "House B",
@@ -216,6 +260,9 @@ def get_live_payload() -> dict[str, Any]:
             "transfer": hb["transfer"],
             "relay": _relay_on("B", hb, ha),
             "online": online_b,
+            "battery_voltage": bat_v,
+            "battery_percent": bat_pct,
+            "battery_status": bat_stat,
         },
         "transfer_log": transfer_log,
         "devices": [
@@ -246,7 +293,9 @@ def get_live_payload() -> dict[str, Any]:
                 "status": hb["status"],
             },
         ],
-        "battery": 54,
+        "battery": bat_pct if bat_pct > 0 else 54,
+        "battery_voltage": bat_v,
+        "battery_status": bat_stat,
         "savings": 1250,
         "gridRed": 32,
         "gini": 0.18,

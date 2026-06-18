@@ -17,10 +17,12 @@ export function profileToUser(profile) {
       role: 'household',
       name,
       initials,
-      householdId: profile.household_id ?? 'HH-01',
+      householdId: profile.household_id ?? null,
       house: profile.circuit_name ?? profile.house_label ?? profile.household_id ?? 'Pending approval',
       profileId: profile.id,
       status: profile.status,
+      barangayName: profile.barangay_name,
+      barangayCode: profile.barangay_code,
     };
   }
 
@@ -30,6 +32,8 @@ export function profileToUser(profile) {
     initials,
     roleLabel: 'Barangay Operator',
     profileId: profile.id,
+    barangayName: profile.barangay_name,
+    barangayCode: profile.barangay_code,
   };
 }
 
