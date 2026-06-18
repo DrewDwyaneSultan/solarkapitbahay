@@ -74,3 +74,12 @@ CREATE INDEX IF NOT EXISTS idx_user_profiles_barangay ON user_profiles(barangay_
 CREATE INDEX IF NOT EXISTS idx_household_registrations_barangay ON household_registrations(barangay_id);
 CREATE INDEX IF NOT EXISTS idx_household_registrations_status ON household_registrations(status);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_households_code ON households(household_code) WHERE household_code IS NOT NULL;
+
+-- ---------------------------------------------------------------------------
+-- 4. Live MQTT cache (Vercel serverless)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS mqtt_live_cache (
+    cache_key TEXT PRIMARY KEY,
+    state_json JSONB NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

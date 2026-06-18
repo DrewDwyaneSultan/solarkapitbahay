@@ -8,7 +8,7 @@ import os
 import time
 from typing import Literal
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -42,7 +42,7 @@ from notifications import (
     send_registration_approved,
     send_registration_rejected,
 )
-from mqtt_bridge import get_live_payload, get_mqtt_status, start_mqtt_bridge
+from mqtt_bridge import get_live_payload, get_mqtt_status, ingest_mqtt_message, start_mqtt_bridge
 
 # On Vercel Services, routePrefix "/api" is stripped before the request hits FastAPI.
 # Locally (and on Render), routes keep the "/api" prefix to match the Vite proxy.
@@ -98,6 +98,11 @@ class BarangayRegisterRequest(BaseModel):
 
 class RegistrationRejectRequest(BaseModel):
     reason: str | None = Field(default=None, max_length=500)
+
+
+class MqttIngestBody(BaseModel):
+    topic: str = Field(min_length=3, max_length=200)
+    payload: str = Field(max_length=2000)
 
 
 def _require_profile(user_id: str = Depends(get_auth_user_id)) -> dict:
@@ -162,6 +167,19 @@ def live_telemetry() -> dict:
 @router.get("/live/status")
 def live_mqtt_status() -> dict:
     return get_mqtt_status()
+
+
+@router.post("/mqtt/ingest")
+def mqtt_ingest(
+    body: MqttIngestBody,
+    x_mqtt_secret: str | None = Header(default=None),
+) -> dict:
+    """Optional webhook target for cloud MQTT brokers (HiveMQ, EMQX)."""
+    expected = os.getenv("MQTT_INGEST_SECRET")
+    if expected and x_mqtt_secret != expected:
+        raise HTTPException(status_code=403, detail="Invalid ingest secret.")
+    ingest_mqtt_message(body.topic.strip(), body.payload)
+    return {"ok": True}
 
 
 @router.get("/auth/status")

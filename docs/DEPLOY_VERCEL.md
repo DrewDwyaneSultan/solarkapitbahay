@@ -69,6 +69,10 @@ Copy from [`.env.example`](../.env.example) in the repo root:
 | Key | Vercel value |
 |-----|----------------|
 | `DATABASE_URL` | Your Supabase URI (required) |
+| `MQTT_BROKER_HOST` | Cloud broker hostname (live ESP32 on Vercel — see `docs/MQTT_VERCEL.md`) |
+| `MQTT_BROKER_PORT` | `8883` (TLS) for HiveMQ Cloud |
+| `MQTT_BROKER_USERNAME` / `MQTT_BROKER_PASSWORD` | Broker credentials |
+| `MQTT_USE_TLS` | `true` |
 | `VITE_API_URL` | Leave **empty** (same-domain `/api`) |
 
 Then click **Deploy**.
