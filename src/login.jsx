@@ -70,18 +70,15 @@ export default function Login({
 
   useEffect(() => {
     if (needsProfile) return;
-    // Fresh visit: default operator and clear stale household choice from a prior session.
-    if (!window.location.search.includes('intended_role=')) {
-      clearIntendedRole();
-      setRole('operator');
-      onIntendedRoleChange?.('operator');
-      return;
-    }
     const fromUrl = consumeIntendedRoleFromUrl();
     if (fromUrl) {
       setRole(fromUrl);
       onIntendedRoleChange?.(fromUrl);
+      return;
     }
+    setRole('operator');
+    persistIntendedRole('operator');
+    onIntendedRoleChange?.('operator');
   }, [needsProfile, onIntendedRoleChange]);
 
   useEffect(() => {
@@ -316,35 +313,24 @@ export default function Login({
           </div>
 
           {!isComplete && (
-            <div className="flex bg-white/70 p-1 rounded-lg border border-sk-card-border/50 mb-6 shadow-inner">
-              <button
-                type="button"
-                onClick={() => {
-                  setRoleAndPersist('operator');
-                  resetMessages();
-                }}
-                className={`flex-1 py-1.5 text-[10px] uppercase tracking-widest font-bold rounded-md transition-colors ${
-                  role === 'operator'
-                    ? 'bg-white text-sk-ink shadow-sm'
-                    : 'text-sk-ink-muted hover:text-sk-ink'
-                }`}
-              >
-                Operator
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setRoleAndPersist('household');
-                  resetMessages();
-                }}
-                className={`flex-1 py-1.5 text-[10px] uppercase tracking-widest font-bold rounded-md transition-colors ${
-                  role === 'household'
-                    ? 'bg-white text-sk-ink shadow-sm'
-                    : 'text-sk-ink-muted hover:text-sk-ink'
-                }`}
-              >
-                Household
-              </button>
+            <div className="mb-6 space-y-2">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-sk-ink-muted text-center">
+                Step 1 — Choose your role
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <RoleCard
+                  active={role === 'operator'}
+                  title="Operator"
+                  description="Manage barangay, approve households, run simulations"
+                  onClick={() => setRoleAndPersist('operator')}
+                />
+                <RoleCard
+                  active={role === 'household'}
+                  title="Household"
+                  description="Join a barangay with a code from your operator"
+                  onClick={() => setRoleAndPersist('household')}
+                />
+              </div>
             </div>
           )}
 
@@ -521,6 +507,10 @@ export default function Login({
                 {mode === 'signin' ? 'Welcome back.' : 'Create an account.'}
               </h3>
 
+              <p className="text-[10px] font-bold uppercase tracking-widest text-sk-ink-muted text-center mb-3">
+                Step 2 — Sign in with Google
+              </p>
+
               {session?.user && !needsProfile && (
                 <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mb-3">
                   Already signed in as <strong>{session.user.email}</strong>. Google may skip the
@@ -632,6 +622,23 @@ export default function Login({
         </div>
       </div>
     </div>
+  );
+}
+
+function RoleCard({ active, title, description, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`text-left rounded-xl border-2 p-3 transition-colors ${
+        active
+          ? 'border-sk-run bg-emerald-50/80 shadow-sm'
+          : 'border-sk-card-border/40 bg-white/60 hover:border-sk-card-border'
+      }`}
+    >
+      <p className="text-sm font-bold text-sk-ink">{title}</p>
+      <p className="text-[10px] text-sk-ink-muted mt-1 leading-snug">{description}</p>
+    </button>
   );
 }
 

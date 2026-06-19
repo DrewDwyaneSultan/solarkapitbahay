@@ -38,6 +38,7 @@ from database import (
     save_run,
     update_operator_household,
     upsert_user_profile,
+    switch_profile_to_operator,
 )
 from auth import auth_configured, get_auth_user_id, get_token_email
 from notifications import (
@@ -257,6 +258,19 @@ def auth_save_profile(
             battery_model=body.battery_model,
             battery_capacity_kwh=body.battery_capacity_kwh,
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/auth/switch-to-operator")
+def auth_switch_to_operator(
+    user_id: str = Depends(get_auth_user_id),
+    email: str = Depends(get_token_email),
+) -> dict:
+    """Convert a pending household sign-up into an operator account (same Google login)."""
+    ensure_app_db()
+    try:
+        return switch_profile_to_operator(user_id, email)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

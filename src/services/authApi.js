@@ -80,6 +80,18 @@ export async function saveProfile(accessToken, profile) {
   return res.json();
 }
 
+export async function switchToOperator(accessToken) {
+  const res = await fetchWithTimeout(`${API_BASE}/api/auth/switch-to-operator`, {
+    method: 'POST',
+    headers: authHeaders(accessToken),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail ?? 'Could not switch to operator.');
+  }
+  return res.json();
+}
+
 export async function fetchHouseholdOptions(barangayCode) {
   const params = barangayCode
     ? `?barangay_code=${encodeURIComponent(barangayCode)}&claimable_only=true`

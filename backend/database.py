@@ -1534,6 +1534,56 @@ def upsert_user_profile(
     return profile
 
 
+def switch_profile_to_operator(auth_user_id: str, email: str) -> dict:
+    """Let a pending/rejected household account become the barangay operator (same Google login)."""
+    profile = get_user_profile(auth_user_id)
+    if not profile:
+        raise ValueError("Profile not found. Complete sign-up first.")
+    if profile.get("role") == "operator":
+        return profile
+    if profile.get("role") != "household":
+        raise ValueError("Invalid account role.")
+
+    if profile.get("status") == "active" and profile.get("household_id"):
+        raise ValueError(
+            "This account is an active household member. Sign out and use a different Google account for operator access."
+        )
+
+    now = _utc_now()
+    with db_connection() as conn:
+        conn.execute(
+            """
+            UPDATE household_registrations SET
+                status = 'rejected',
+                rejection_reason = ?,
+                reviewed_at = ?,
+                updated_at = ?
+            WHERE applicant_user_id = ? AND status = 'pending'
+            """,
+            ("Account switched to barangay operator role", now, now, auth_user_id),
+        )
+        conn.execute(
+            """
+            UPDATE user_profiles SET
+                role = 'operator',
+                status = 'active',
+                household_id = NULL,
+                has_solar = 0,
+                has_battery = 0,
+                battery_model = NULL,
+                battery_capacity_kwh = NULL,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (now, auth_user_id),
+        )
+
+    updated = get_user_profile(auth_user_id)
+    if not updated:
+        raise RuntimeError("Could not switch to operator.")
+    return updated
+
+
 def _upsert_pending_registration(
     conn,
     *,
