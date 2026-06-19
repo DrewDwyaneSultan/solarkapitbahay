@@ -67,10 +67,14 @@ export function estimateCo2Kg(solarGeneratedKwh) {
   return Math.round(Number(solarGeneratedKwh || 0) * 0.79);
 }
 
-export function buildSavingsTrend(results, period = 'week') {
+export function buildSavingsTrend(results, period = 'week', shareFactor = 1) {
   if (!results) return [];
   const days = Number(results.simulation_days || 30);
-  const total = Number(results.total_savings_php || 0);
+  let total = Number(results.total_savings_php || 0);
+  if (total <= 0 && results.monthly_savings_php) {
+    total = Number(results.monthly_savings_php) * (days / 30);
+  }
+  total *= shareFactor;
   const daily = days > 0 ? total / days : 0;
   const points = period === 'month' ? 30 : 7;
   return Array.from({ length: points }, (_, i) =>
