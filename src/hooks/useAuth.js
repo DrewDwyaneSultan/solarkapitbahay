@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient';
 import { fetchMe } from '../services/authApi';
 
@@ -44,6 +44,7 @@ export function useAuth() {
   const [loading, setLoading] = useState(true);
   const [needsProfile, setNeedsProfile] = useState(false);
   const [authError, setAuthError] = useState('');
+  const bootstrappedRef = useRef(false);
 
   const refreshProfile = useCallback(async (accessToken) => {
     setAuthError('');
@@ -51,6 +52,7 @@ export function useAuth() {
       const nextProfile = await fetchMe(accessToken);
       setProfile(nextProfile);
       setNeedsProfile(false);
+      return nextProfile;
     } catch (err) {
       if (err.status === 404) {
         setProfile(null);
@@ -60,7 +62,17 @@ export function useAuth() {
         setNeedsProfile(false);
         setAuthError(err.message ?? 'Could not load profile.');
       }
+      return null;
     }
+  }, []);
+
+  const shouldSilentRefresh = useCallback((event) => {
+    if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') return true;
+    // Tab focus / session sync — already signed in, don't blank the UI.
+    if (bootstrappedRef.current && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
+      return true;
+    }
+    return false;
   }, []);
 
   useEffect(() => {
@@ -76,9 +88,13 @@ export function useAuth() {
       setSession(current);
       if (current?.access_token) {
         refreshProfile(current.access_token).finally(() => {
-          if (active) setLoading(false);
+          if (active) {
+            bootstrappedRef.current = true;
+            setLoading(false);
+          }
         });
       } else {
+        bootstrappedRef.current = true;
         setLoading(false);
       }
     });
@@ -88,13 +104,15 @@ export function useAuth() {
     } = supabase.auth.onAuthStateChange((event, nextSession) => {
       setSession(nextSession);
       if (nextSession?.access_token) {
-        // Tab focus triggers TOKEN_REFRESHED — refresh profile without full-screen loading.
-        if (event === 'TOKEN_REFRESHED') {
+        if (shouldSilentRefresh(event)) {
           refreshProfile(nextSession.access_token);
           return;
         }
         setLoading(true);
-        refreshProfile(nextSession.access_token).finally(() => setLoading(false));
+        refreshProfile(nextSession.access_token).finally(() => {
+          bootstrappedRef.current = true;
+          setLoading(false);
+        });
       } else {
         setProfile(null);
         setNeedsProfile(false);
@@ -106,7 +124,7 @@ export function useAuth() {
       active = false;
       subscription.unsubscribe();
     };
-  }, [refreshProfile]);
+  }, [refreshProfile, shouldSilentRefresh]);
 
   const signOut = useCallback(async () => {
     if (isSupabaseConfigured() && supabase) {

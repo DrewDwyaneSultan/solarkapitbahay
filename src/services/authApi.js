@@ -1,4 +1,15 @@
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
+const API_TIMEOUT_MS = 12000;
+
+async function fetchWithTimeout(url, options = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 function authHeaders(accessToken) {
   return {
@@ -14,9 +25,19 @@ export async function fetchAuthStatus() {
 }
 
 export async function fetchMe(accessToken) {
-  const res = await fetch(`${API_BASE}/api/auth/me`, {
-    headers: authHeaders(accessToken),
-  });
+  let res;
+  try {
+    res = await fetchWithTimeout(`${API_BASE}/api/auth/me`, {
+      headers: authHeaders(accessToken),
+    });
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      const timeoutErr = new Error('Backend timed out. Try again in a moment.');
+      timeoutErr.status = 504;
+      throw timeoutErr;
+    }
+    throw err;
+  }
   if (res.status === 404) {
     const err = new Error('Profile not found');
     err.status = 404;

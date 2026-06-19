@@ -45,17 +45,42 @@ function App() {
 
   useEffect(() => {
     if (auth.loading) return;
-    if (auth.user?.role === 'operator' && auth.supabaseEnabled && auth.session) {
-      if (operatorBarangay || auth.profile?.barangay_id) {
-        setBarangayCheckDone(true);
-        return;
-      }
-      setBarangayCheckDone(false);
-      refreshOperatorBarangay();
-    } else {
+
+    const isOperator =
+      auth.user?.role === 'operator' && auth.supabaseEnabled && auth.session;
+
+    if (!isOperator) {
       setBarangayCheckDone(true);
+      return;
     }
-  }, [auth.loading, auth.user?.role, auth.supabaseEnabled, auth.session, auth.profile?.barangay_id, operatorBarangay, refreshOperatorBarangay]);
+
+    // Already linked to a barangay — show dashboard immediately, refresh in background.
+    if (auth.profile?.barangay_id || operatorBarangay) {
+      setBarangayCheckDone(true);
+      if (!operatorBarangay && auth.profile?.barangay_id) {
+        refreshOperatorBarangay();
+      }
+      return;
+    }
+
+    setBarangayCheckDone(false);
+    refreshOperatorBarangay();
+  }, [
+    auth.loading,
+    auth.user?.role,
+    auth.supabaseEnabled,
+    auth.session,
+    auth.profile?.barangay_id,
+    operatorBarangay,
+    refreshOperatorBarangay,
+  ]);
+
+  // Never block the UI forever if barangay lookup is slow.
+  useEffect(() => {
+    if (barangayCheckDone) return undefined;
+    const timer = setTimeout(() => setBarangayCheckDone(true), 6000);
+    return () => clearTimeout(timer);
+  }, [barangayCheckDone]);
 
   if (auth.loading) {
     return <LoadingScreen />;
@@ -148,15 +173,6 @@ function App() {
         onLogout={handleLogout}
       />
     );
-  }
-
-  if (
-    auth.supabaseEnabled &&
-    auth.session &&
-    !demoUser &&
-    !barangayCheckDone
-  ) {
-    return <LoadingScreen />;
   }
 
   if (
