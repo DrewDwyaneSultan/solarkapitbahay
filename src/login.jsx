@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import BrandLogo from './components/BrandLogo';
 import Toggle from './components/ui/Toggle';
 import { supabase, isSupabaseConfigured } from './lib/supabaseClient';
@@ -9,6 +9,7 @@ import {
   persistIntendedRole,
   clearIntendedRole,
   consumeIntendedRoleFromUrl,
+  readIntendedRole,
 } from './utils/intendedRole';
 
 const demoAccounts = {
@@ -44,7 +45,13 @@ export default function Login({
   defaultRole = 'operator',
   forceHousehold = false,
 }) {
-  const [role, setRole] = useState(forceHousehold ? 'household' : defaultRole);
+  const [role, setRole] = useState(() => {
+    if (forceHousehold) return 'household';
+    const stored = readIntendedRole();
+    if (stored === 'household' || stored === 'operator') return stored;
+    return defaultRole === 'household' ? 'household' : 'operator';
+  });
+  const roleInitRef = useRef(false);
   const [mode, setMode] = useState(needsProfile ? 'complete' : 'signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -69,17 +76,28 @@ export default function Login({
   }, [needsProfile]);
 
   useEffect(() => {
-    if (needsProfile) return;
+    if (needsProfile || roleInitRef.current) return;
+    roleInitRef.current = true;
+
     const fromUrl = consumeIntendedRoleFromUrl();
     if (fromUrl) {
       setRole(fromUrl);
       onIntendedRoleChange?.(fromUrl);
       return;
     }
+
+    const stored = readIntendedRole();
+    if (stored === 'household' || stored === 'operator') {
+      setRole(stored);
+      onIntendedRoleChange?.(stored);
+      return;
+    }
+
     setRole('operator');
     persistIntendedRole('operator');
     onIntendedRoleChange?.('operator');
-  }, [needsProfile, onIntendedRoleChange]);
+    // Run once on mount — do not reset role when parent re-renders (onIntendedRoleChange identity).
+  }, [needsProfile]);
 
   useEffect(() => {
     if (forceHousehold) {
