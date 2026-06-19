@@ -7,6 +7,8 @@ import HouseholdsPage from './HouseholdsPage';
 import AlertsPage from './AlertsPage';
 import SettingsPage from './SettingsPage';
 import SimulationPage from './SimulationPage';
+import { LiveDataProvider, useLiveData } from '../hooks/useLiveData';
+import { useLiveAlerts } from '../hooks/useLiveAlerts';
 
 const pageComponents = {
   dashboard: DashboardPage,
@@ -32,8 +34,33 @@ export default function OperatorDashboard({
   barangayCode,
   accessToken,
   onLogout,
+  onBarangayUpdated,
+}) {
+  return (
+    <LiveDataProvider>
+      <OperatorDashboardInner
+        operator={operator}
+        barangayName={barangayName}
+        barangayCode={barangayCode}
+        accessToken={accessToken}
+        onLogout={onLogout}
+        onBarangayUpdated={onBarangayUpdated}
+      />
+    </LiveDataProvider>
+  );
+}
+
+function OperatorDashboardInner({
+  operator,
+  barangayName,
+  barangayCode,
+  accessToken,
+  onLogout,
+  onBarangayUpdated,
 }) {
   const [activePage, setActivePage] = useState('dashboard');
+  const liveData = useLiveData();
+  const alerts = useLiveAlerts(liveData);
 
   const PageView = pageComponents[activePage] ?? (() => <ComingSoonPage pageId={activePage} />);
 
@@ -52,6 +79,14 @@ export default function OperatorDashboard({
         <HouseholdsPage accessToken={accessToken} barangayCode={barangayCode} />
       ) : activePage === 'energyTransfer' ? (
         <EnergyTransferPage accessToken={accessToken} />
+      ) : activePage === 'settings' ? (
+        <SettingsPage
+          accessToken={accessToken}
+          barangayName={barangayName}
+          onBarangayUpdated={onBarangayUpdated}
+        />
+      ) : activePage === 'alerts' ? (
+        <AlertsPage liveData={liveData} alerts={alerts} />
       ) : (
         <PageView />
       )}

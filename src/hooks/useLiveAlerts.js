@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { isTransferActive } from '../utils/liveStatus';
+import { loadAlertState, persistAlertState } from '../utils/alertStorage';
 
 function fmtTime(iso) {
   if (!iso) return 'Just now';
@@ -141,15 +142,31 @@ export function buildLiveAlerts(data) {
   return alerts;
 }
 
+/** Drop suppressions for alerts that cleared so they can fire again on the next incident. */
+function pruneSuppressed(suppressedIds, generated) {
+  const activeIds = new Set(generated.map((a) => a.id));
+  const next = new Set([...suppressedIds].filter((id) => activeIds.has(id)));
+  return next.size === suppressedIds.size ? suppressedIds : next;
+}
+
 export function useLiveAlerts(liveData) {
-  const [ackedIds, setAckedIds] = useState(() => new Set());
-  const [history, setHistory] = useState([]);
+  const initial = useMemo(() => loadAlertState(), []);
+  const [suppressedIds, setSuppressedIds] = useState(() => initial.suppressedIds);
+  const [history, setHistory] = useState(() => initial.history);
 
   const generated = useMemo(() => buildLiveAlerts(liveData), [liveData]);
 
+  useEffect(() => {
+    setSuppressedIds((prev) => pruneSuppressed(prev, generated));
+  }, [generated]);
+
+  useEffect(() => {
+    persistAlertState(suppressedIds, history);
+  }, [suppressedIds, history]);
+
   const active = useMemo(
-    () => generated.filter((a) => !ackedIds.has(a.id)),
-    [generated, ackedIds],
+    () => generated.filter((a) => !suppressedIds.has(a.id)),
+    [generated, suppressedIds],
   );
 
   const ackAlert = (id) => {
@@ -157,16 +174,16 @@ export function useLiveAlerts(liveData) {
     if (alert) {
       setHistory((h) => [{ ...alert, ack: true, ackedAt: new Date().toLocaleString() }, ...h].slice(0, 50));
     }
-    setAckedIds((prev) => new Set([...prev, id]));
+    setSuppressedIds((prev) => new Set([...prev, id]));
   };
 
   const markAllRead = () => {
-    const toAck = generated.filter((a) => !ackedIds.has(a.id));
+    const toAck = generated.filter((a) => !suppressedIds.has(a.id));
     setHistory((h) => [
       ...toAck.map((a) => ({ ...a, ack: true, ackedAt: new Date().toLocaleString() })),
       ...h,
     ].slice(0, 50));
-    setAckedIds((prev) => new Set([...prev, ...toAck.map((a) => a.id)]));
+    setSuppressedIds((prev) => new Set([...prev, ...toAck.map((a) => a.id)]));
   };
 
   return { active, history, ackAlert, markAllRead, generated };

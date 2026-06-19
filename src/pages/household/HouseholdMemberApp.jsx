@@ -3,6 +3,7 @@ import HouseholdLayout from './HouseholdLayout';
 import HouseholdDashboardPage from './HouseholdDashboardPage';
 import ViewBatterySharingPage from './ViewBatterySharingPage';
 import HouseholdSettingsPage from './HouseholdSettingsPage';
+import { LiveDataProvider } from '../../hooks/useLiveData';
 
 const pages = {
   memberDashboard: HouseholdDashboardPage,
@@ -19,19 +20,21 @@ export default function HouseholdMemberApp({
   const Page = pages[activePage] ?? HouseholdDashboardPage;
 
   return (
-    <HouseholdLayout
-      activePage={activePage}
-      onNavigate={setActivePage}
-      barangayName={barangay?.name ?? 'Barangay Name'}
-      householdCode={barangay?.householdCode ?? 'household_code'}
-      memberName={member?.name ?? 'User'}
-      onLogout={onLogout}
-    >
-      <Page
+    <LiveDataProvider>
+      <HouseholdLayout
+        activePage={activePage}
+        onNavigate={setActivePage}
+        barangayName={barangay?.name ?? 'Barangay Name'}
+        householdCode={barangay?.householdCode ?? 'household_code'}
         memberName={member?.name ?? 'User'}
-        householdId={member?.householdId ?? 'HH-01'}
-      />
-    </HouseholdLayout>
+        onLogout={onLogout}
+      >
+        <Page
+          memberName={member?.name ?? 'User'}
+          householdId={member?.householdId ?? 'HH-01'}
+        />
+      </HouseholdLayout>
+    </LiveDataProvider>
   );
 }
 

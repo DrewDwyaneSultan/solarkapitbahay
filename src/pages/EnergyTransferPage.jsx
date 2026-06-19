@@ -160,6 +160,13 @@ export default function EnergyTransferPage({ accessToken }) {
         <LiveStatusBadge data={liveData} />
 
         <Card title="Live Snapshot">
+          <p className="text-[10px] text-sk-ink-muted mb-3 uppercase tracking-widest font-semibold">
+            {liveData.lastSync
+              ? `Updated ${new Date(liveData.lastSync).toLocaleTimeString()}`
+              : liveData.mqttConnected
+                ? 'Polling MQTT…'
+                : 'Waiting for live MQTT'}
+          </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {[
               {
@@ -167,7 +174,7 @@ export default function EnergyTransferPage({ accessToken }) {
                 val: liveData.houseA.online ? liveData.houseA.solar : '—',
                 unit: liveData.houseA.online ? 'W' : '',
                 sub: liveData.houseA.online
-                  ? `${liveData.houseA.voltage?.toFixed?.(1) ?? '—'} V · ${liveData.houseA.current?.toFixed?.(2) ?? '—'} A`
+                  ? `${Number(liveData.houseA.voltage ?? 0).toFixed(1)} V · ${Number(liveData.houseA.current ?? 0).toFixed(2)} A · ${liveData.houseA.status}`
                   : 'Offline',
               },
               {
@@ -175,7 +182,7 @@ export default function EnergyTransferPage({ accessToken }) {
                 val: liveData.houseB.online ? liveData.houseB.solar : '—',
                 unit: liveData.houseB.online ? 'W' : '',
                 sub: liveData.houseB.online
-                  ? `${liveData.houseB.voltage?.toFixed?.(1) ?? '—'} V · ${liveData.houseB.current?.toFixed?.(2) ?? '—'} A`
+                  ? `${Number(liveData.houseB.voltage ?? 0).toFixed(1)} V · ${Number(liveData.houseB.current ?? 0).toFixed(2)} A · ${liveData.houseB.status}`
                   : 'Offline',
               },
               {
@@ -186,9 +193,9 @@ export default function EnergyTransferPage({ accessToken }) {
               },
               {
                 label: 'Battery V',
-                val: liveData.mqttConnected ? (liveData.batteryVoltage?.toFixed?.(2) ?? '—') : '—',
+                val: liveData.mqttConnected ? Number(liveData.batteryVoltage ?? 0).toFixed(2) : '—',
                 unit: liveData.mqttConnected ? 'V' : '',
-                sub: 'Community 18650',
+                sub: 'Community 18650 (House A)',
               },
             ].map((row) => (
               <div key={row.label} className="rounded-xl border border-sk-card-border/40 bg-white/70 p-3">

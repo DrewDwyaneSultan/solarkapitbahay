@@ -1,12 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import Card from '../components/ui/Card';
 import LiveStatusBadge from '../components/ui/LiveStatusBadge';
-import { useLiveAlerts } from '../hooks/useLiveAlerts';
-import { useLiveData } from '../hooks/useLiveData';
 
-export default function AlertsPage() {
-  const liveData = useLiveData();
-  const { active, history, ackAlert, markAllRead } = useLiveAlerts(liveData);
+export default function AlertsPage({ liveData, alerts }) {
+  const { active, history, ackAlert, markAllRead } = alerts;
   const [kind, setKind] = useState('all');
 
   const filteredActive = useMemo(() => {
