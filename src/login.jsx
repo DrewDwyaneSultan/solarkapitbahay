@@ -37,6 +37,7 @@ export default function Login({
   onSignIn,
   onProfileComplete,
   onIntendedRoleChange,
+  onSwitchToOperator,
   needsProfile = false,
   session = null,
   supabaseEnabled = isSupabaseConfigured(),
@@ -68,12 +69,20 @@ export default function Login({
   }, [needsProfile]);
 
   useEffect(() => {
+    if (needsProfile) return;
+    // Fresh visit: default operator and clear stale household choice from a prior session.
+    if (!window.location.search.includes('intended_role=')) {
+      clearIntendedRole();
+      setRole('operator');
+      onIntendedRoleChange?.('operator');
+      return;
+    }
     const fromUrl = consumeIntendedRoleFromUrl();
     if (fromUrl) {
       setRole(fromUrl);
       onIntendedRoleChange?.(fromUrl);
     }
-  }, [onIntendedRoleChange]);
+  }, [needsProfile, onIntendedRoleChange]);
 
   useEffect(() => {
     if (forceHousehold) {
@@ -366,8 +375,25 @@ export default function Login({
                   </div>
                 )}
                 {forceHousehold && (
-                  <p className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2 mb-1">
-                    Joining as a <strong>household member</strong> — enter your barangay code below.
+                  <div className="text-xs bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2 mb-1 space-y-2">
+                    <p className="text-emerald-900">
+                      Joining as a <strong>household member</strong> — ask your barangay operator for the
+                      barangay code (e.g. demo: <code className="font-mono">SK-MABINI-DEMO</code>).
+                    </p>
+                    <button
+                      type="button"
+                      onClick={switchToOperator}
+                      className="text-emerald-800 underline font-semibold hover:text-emerald-950"
+                    >
+                      I&apos;m a barangay operator instead
+                    </button>
+                  </div>
+                )}
+                {!forceHousehold && role === 'operator' && (
+                  <p className="text-xs text-sk-ink-muted bg-sk-placeholder/40 rounded-md px-3 py-2">
+                    After sign-in you&apos;ll register your barangay and receive a{' '}
+                    <strong>barangay code</strong> to share with households. Demo seed uses{' '}
+                    <code className="font-mono text-[11px]">SK-MABINI-DEMO</code>.
                   </p>
                 )}
                 <Field label="Display name" value={displayName} onChange={setDisplayName} required />
@@ -488,6 +514,13 @@ export default function Login({
                 {mode === 'signin' ? 'Welcome back.' : 'Create an account.'}
               </h3>
 
+              {session?.user && !needsProfile && (
+                <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mb-3">
+                  Already signed in as <strong>{session.user.email}</strong>. Google may skip the
+                  account picker — you&apos;ll continue with this account.
+                </p>
+              )}
+
               <button
                 type="button"
                 onClick={handleGoogleSignIn}
@@ -495,7 +528,7 @@ export default function Login({
                 className="w-full h-11 rounded-md border border-sk-card-border/70 bg-white text-sm font-semibold text-sk-ink hover:bg-sk-placeholder/30 flex items-center justify-center gap-2 mb-4"
               >
                 <GoogleIcon />
-                Continue with Google
+                Continue with Google ({role === 'operator' ? 'Operator' : 'Household'})
               </button>
 
               <div className="flex items-center gap-3 mb-4">

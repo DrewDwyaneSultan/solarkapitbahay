@@ -9,7 +9,6 @@ import { fetchMyBarangay } from './services/registrationApi';
 import {
   clearIntendedRole,
   consumeIntendedRoleFromUrl,
-  readIntendedRole,
 } from './utils/intendedRole';
 
 function LoadingScreen() {
@@ -53,10 +52,11 @@ function App() {
   const [demoUser, setDemoUser] = useState(null);
   const [operatorBarangay, setOperatorBarangay] = useState(null);
   const [barangayCheckDone, setBarangayCheckDone] = useState(false);
-  const [intendedRole, setIntendedRole] = useState(() => readIntendedRole());
+  const [intendedRole, setIntendedRole] = useState(null);
 
   useEffect(() => {
-    setIntendedRole(consumeIntendedRoleFromUrl());
+    const fromOAuth = consumeIntendedRoleFromUrl();
+    if (fromOAuth) setIntendedRole(fromOAuth);
   }, []);
 
   const handleLogout = async () => {
@@ -126,13 +126,17 @@ function App() {
 
   const profileRole = auth.profile ? getProfileRole(auth.profile) : null;
   const wantsHousehold = intendedRole === 'household';
+  const wantsOperator = intendedRole === 'operator';
 
   const needsHouseholdSetup =
     Boolean(auth.session) &&
     wantsHousehold &&
     (auth.needsProfile || !auth.profile || profileRole !== 'household');
 
-  const needsOperatorProfile = Boolean(auth.session) && auth.needsProfile && !wantsHousehold;
+  const needsOperatorProfile =
+    Boolean(auth.session) &&
+    auth.needsProfile &&
+    (wantsOperator || !wantsHousehold);
 
   if ((needsHouseholdSetup || needsOperatorProfile) && auth.session) {
     return (
@@ -142,13 +146,15 @@ function App() {
         supabaseEnabled={auth.supabaseEnabled}
         defaultRole={wantsHousehold ? 'household' : 'operator'}
         forceHousehold={wantsHousehold}
+        onSwitchToOperator={() => {
+          clearIntendedRole();
+          setIntendedRole('operator');
+        }}
         onProfileComplete={(saved) => {
           auth.setProfileFromSave(saved);
           setDemoUser(null);
-          if (getProfileRole(saved) === 'household') {
-            clearIntendedRole();
-            setIntendedRole(null);
-          }
+          clearIntendedRole();
+          setIntendedRole(null);
         }}
         onSignIn={() => {}}
       />

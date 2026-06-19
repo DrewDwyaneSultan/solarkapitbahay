@@ -28,12 +28,12 @@ export function clearIntendedRole() {
   }
 }
 
-/** Read ?intended_role= from OAuth redirect and store it (sessionStorage alone is unreliable). */
+/** Read ?intended_role= from OAuth redirect only (avoid stale sessionStorage forcing household). */
 export function consumeIntendedRoleFromUrl() {
   if (typeof window === 'undefined') return null;
   const params = new URLSearchParams(window.location.search);
   const fromUrl = params.get(URL_PARAM);
-  if (fromUrl !== 'household' && fromUrl !== 'operator') return readIntendedRole();
+  if (fromUrl !== 'household' && fromUrl !== 'operator') return null;
 
   persistIntendedRole(fromUrl);
   params.delete(URL_PARAM);
