@@ -112,6 +112,13 @@ export default function Login({
     onIntendedRoleChange?.(nextRole);
   };
 
+  const switchToOperator = () => {
+    setRole('operator');
+    persistIntendedRole('operator');
+    onIntendedRoleChange?.('operator');
+    onSwitchToOperator?.();
+  };
+
   useEffect(() => {
     const effectiveRole = forceHousehold ? 'household' : role;
     if (mode !== 'complete' || effectiveRole !== 'household') return;
