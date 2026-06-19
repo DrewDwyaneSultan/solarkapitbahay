@@ -19,25 +19,42 @@ function HouseFootprintShadow({ id, points }) {
   );
 }
 
+function houseNetWatts(house) {
+  const solar = Number(house.solar ?? 0);
+  const load = Number(house.load ?? 0);
+  const status = String(house.status ?? '').toUpperCase();
+  const raw = solar - load;
+  if (!house.online) return { watts: 0, supply: false, solar, load };
+  if (status === 'SURPLUS') {
+    return { watts: Math.max(raw, 0), supply: true, solar, load };
+  }
+  if (status === 'DEFICIT') {
+    return { watts: Math.min(raw, 0), supply: false, solar, load };
+  }
+  return { watts: raw, supply: raw >= 0, solar, load };
+}
+
 export default function CommunityBatteryScene({ data, capacityKwh = 100 }) {
   const pct = Math.round(data.battery);
   const kwhNow = Math.round(pct * capacityKwh * 0.01);
 
-  const surplusA = data.houseA.solar - data.houseA.load;
-  const surplusB = data.houseB.solar - data.houseB.load;
+  const netA = houseNetWatts(data.houseA);
+  const netB = houseNetWatts(data.houseB);
+  const surplusA = netA.watts;
+  const surplusB = netB.watts;
   const aSends = surplusA >= surplusB && surplusA > 0;
   const transferW = Math.min(
     Math.abs(surplusA),
-    Math.max(0, aSends ? data.houseB.load - data.houseB.solar : data.houseA.load - data.houseA.solar),
+    Math.max(0, aSends ? netB.load - netB.solar : netA.load - netA.solar),
   );
-  const flowActive = transferW > 10;
+  const flowActive = transferW > 2;
 
   const fillH = (pct / 100) * BATT_FILL_H;
   const fillY = 96 + (BATT_FILL_H - fillH);
   const barFillW = (pct / 100) * BAR_W;
 
-  const aSupply = surplusA > 0;
-  const bSupply = surplusB > 0;
+  const aSupply = netA.supply;
+  const bSupply = netB.supply;
   const leftFlowClass = flowActive ? (aSends ? 'cb-fl-r' : 'cb-fl-l') : '';
   const rightFlowClass = flowActive ? (aSends ? 'cb-fl-l' : 'cb-fl-r') : '';
 
@@ -72,8 +89,8 @@ export default function CommunityBatteryScene({ data, capacityKwh = 100 }) {
       <text x="26" y="30" fontSize="16" fontWeight="500" fill="#2C2C2A" fontFamily={FONT}>
         Community Battery
       </text>
-      <text x="26" y="47" fontSize="12" fill="#888780" fontFamily={FONT}>
-        House A &amp; House B · 2 circuits
+      <text x="26" y="47" fontSize="13" fill="#5F5E5A" fontFamily={FONT}>
+        House A &amp; House B · 2 circuits · LED demo load ~8W
       </text>
       <text x="714" y="30" fontSize="24" fontWeight="500" fill="#1D9E75" textAnchor="end" fontFamily={FONT}>
         {pct}%
@@ -270,8 +287,8 @@ export default function CommunityBatteryScene({ data, capacityKwh = 100 }) {
         x={26}
         watts={surplusA}
         supply={aSupply}
-        solar={data.houseA.solar}
-        load={data.houseA.load}
+        solar={netA.solar}
+        load={netA.load}
         side="left"
       />
 
@@ -280,8 +297,8 @@ export default function CommunityBatteryScene({ data, capacityKwh = 100 }) {
         x={514}
         watts={surplusB}
         supply={bSupply}
-        solar={data.houseB.solar}
-        load={data.houseB.load}
+        solar={netB.solar}
+        load={netB.load}
         side="right"
       />
 
@@ -311,7 +328,7 @@ function StatCard({ x, watts, supply, solar, load, side }) {
   const bg = green ? '#E1F5EE' : '#FCEBEB';
   const border = green ? '#5DCAA5' : '#F09595';
   const wattsFill = green ? '#0F6E56' : '#A32D2D';
-  const labelFill = green ? '#5DCAA5' : '#F09595';
+  const labelFill = green ? '#085041' : '#7A1F1F';
   const rowFill = green ? '#085041' : '#501313';
   const divider = green ? '#9FE1CB' : '#F7C1C1';
   const textX = side === 'left' ? x + 20 : x + 20;
@@ -320,24 +337,24 @@ function StatCard({ x, watts, supply, solar, load, side }) {
   return (
     <g>
       <rect x={x} y="268" width="200" height="90" rx="10" fill={bg} stroke={border} strokeWidth="0.8" />
-      <text x={textX} y="292" fontSize="20" fontWeight="500" fill={wattsFill} fontFamily={FONT}>
-        {fmtW(watts)}
+      <text x={textX} y="292" fontSize="22" fontWeight="600" fill={wattsFill} fontFamily={FONT}>
+        {fmtW(Math.round(watts))}
       </text>
-      <text x={textX} y="308" fontSize="11" fill={labelFill} fontFamily={FONT}>
+      <text x={textX} y="308" fontSize="12" fontWeight="500" fill={labelFill} fontFamily={FONT}>
         {supply ? 'Supplying' : 'Drawing'}
       </text>
       <line x1={textX} y1="318" x2={valueEnd} y2="318" stroke={divider} strokeWidth="0.5" />
-      <text x={textX} y="332" fontSize="11" fill={rowFill} fontFamily={FONT}>
+      <text x={textX} y="332" fontSize="12" fill={rowFill} fontFamily={FONT}>
         Solar
       </text>
-      <text x={valueEnd} y="332" textAnchor="end" fontSize="11" fontWeight="500" fill={rowFill} fontFamily={FONT}>
-        {solar}W
+      <text x={valueEnd} y="332" textAnchor="end" fontSize="12" fontWeight="600" fill={rowFill} fontFamily={FONT}>
+        {Math.round(solar)}W
       </text>
-      <text x={textX} y="348" fontSize="11" fill={rowFill} fontFamily={FONT}>
+      <text x={textX} y="348" fontSize="12" fill={rowFill} fontFamily={FONT}>
         Load
       </text>
-      <text x={valueEnd} y="348" textAnchor="end" fontSize="11" fontWeight="500" fill={rowFill} fontFamily={FONT}>
-        {load}W
+      <text x={valueEnd} y="348" textAnchor="end" fontSize="12" fontWeight="600" fill={rowFill} fontFamily={FONT}>
+        {Math.round(load)}W
       </text>
     </g>
   );

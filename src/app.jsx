@@ -424,6 +424,7 @@ function App() {
         barangayName={barangayName}
         barangayCode={barangayCode}
         accessToken={auth.session?.access_token ?? null}
+        onBarangayUpdated={(updated) => setOperatorBarangay(updated)}
         onLogout={handleLogout}
       />
     );

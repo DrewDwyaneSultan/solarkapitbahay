@@ -393,6 +393,31 @@ def _migrate_onboarding(conn) -> None:
         conn.execute("ALTER TABLE barangays ADD COLUMN province TEXT")
     if "operator_user_id" not in barangay_cols:
         conn.execute("ALTER TABLE barangays ADD COLUMN operator_user_id TEXT")
+    barangay_cols = _table_columns(conn, "barangays")
+    if "mqtt_broker_host" not in barangay_cols:
+        conn.execute("ALTER TABLE barangays ADD COLUMN mqtt_broker_host TEXT")
+    if "mqtt_broker_port" not in barangay_cols:
+        conn.execute(
+            "ALTER TABLE barangays ADD COLUMN mqtt_broker_port INTEGER DEFAULT 1883"
+            if not use_postgres()
+            else "ALTER TABLE barangays ADD COLUMN mqtt_broker_port INTEGER DEFAULT 1883"
+        )
+    if "battery_low_threshold_pct" not in barangay_cols:
+        conn.execute(
+            "ALTER TABLE barangays ADD COLUMN battery_low_threshold_pct INTEGER DEFAULT 20"
+        )
+    if "auto_device_discovery" not in barangay_cols:
+        conn.execute(
+            "ALTER TABLE barangays ADD COLUMN auto_device_discovery INTEGER DEFAULT 1"
+            if not use_postgres()
+            else "ALTER TABLE barangays ADD COLUMN auto_device_discovery SMALLINT DEFAULT 1"
+        )
+    if "email_notifications" not in barangay_cols:
+        conn.execute(
+            "ALTER TABLE barangays ADD COLUMN email_notifications INTEGER DEFAULT 1"
+            if not use_postgres()
+            else "ALTER TABLE barangays ADD COLUMN email_notifications SMALLINT DEFAULT 1"
+        )
     conn.execute(
         "UPDATE barangays SET barangay_code = ? WHERE barangay_code IS NULL",
         (f"SK-MABINI-{_random_code(4)}",),
@@ -2153,6 +2178,64 @@ def register_barangay(
 
     bg = get_barangay(barangay_id)
     return {**(bg or {}), "virtual_hub": hub}
+
+
+def update_barangay_settings(
+    operator_user_id: str,
+    *,
+    name: str | None = None,
+    contact_email: str | None = None,
+    mqtt_broker_host: str | None = None,
+    mqtt_broker_port: int | None = None,
+    battery_low_threshold_pct: int | None = None,
+    auto_device_discovery: bool | None = None,
+    email_notifications: bool | None = None,
+) -> dict:
+    bg = get_barangay_for_operator(operator_user_id)
+    if not bg:
+        raise ValueError("No barangay registered for this operator")
+
+    fields: list[str] = []
+    params: list[Any] = []
+
+    if name is not None:
+        fields.append("name = ?")
+        params.append(name.strip())
+    if contact_email is not None:
+        fields.append("contact_email = ?")
+        params.append(contact_email.strip().lower())
+    if mqtt_broker_host is not None:
+        fields.append("mqtt_broker_host = ?")
+        params.append(mqtt_broker_host.strip() or None)
+    if mqtt_broker_port is not None:
+        fields.append("mqtt_broker_port = ?")
+        params.append(int(mqtt_broker_port))
+    if battery_low_threshold_pct is not None:
+        fields.append("battery_low_threshold_pct = ?")
+        params.append(int(battery_low_threshold_pct))
+    if auto_device_discovery is not None:
+        fields.append("auto_device_discovery = ?")
+        params.append(1 if auto_device_discovery else 0)
+    if email_notifications is not None:
+        fields.append("email_notifications = ?")
+        params.append(1 if email_notifications else 0)
+
+    if not fields:
+        return dict(bg)
+
+    now = _utc_now()
+    fields.append("updated_at = ?")
+    params.append(now)
+    params.append(int(bg["id"]))
+
+    with db_connection() as conn:
+        conn.execute(
+            f"UPDATE barangays SET {', '.join(fields)} WHERE id = ?",
+            tuple(params),
+        )
+
+    updated = get_barangay(int(bg["id"]))
+    return dict(updated or bg)
 
 
 def list_registrations(

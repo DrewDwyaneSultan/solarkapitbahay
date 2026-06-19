@@ -19,7 +19,7 @@ export default {
           card: '#faf6ef',
           'card-border': '#8b7355',
           ink: '#2c1f1a',
-          'ink-muted': '#6b5d54',
+          'ink-muted': '#52463f',
           accent: '#c17a3a',
           run: '#3e6640',
           'run-hover': '#345735',

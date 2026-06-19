@@ -78,11 +78,12 @@ function OperatorDashboardInner({
       ) : activePage === 'households' ? (
         <HouseholdsPage accessToken={accessToken} barangayCode={barangayCode} />
       ) : activePage === 'energyTransfer' ? (
-        <EnergyTransferPage accessToken={accessToken} />
+        <EnergyTransferPage />
       ) : activePage === 'settings' ? (
         <SettingsPage
           accessToken={accessToken}
           barangayName={barangayName}
+          barangayCode={barangayCode}
           onBarangayUpdated={onBarangayUpdated}
         />
       ) : activePage === 'alerts' ? (

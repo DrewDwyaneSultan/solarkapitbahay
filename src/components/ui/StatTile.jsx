@@ -1,5 +1,6 @@
 import React from 'react';
 import { SunLogoIcon } from '../icons/NavIcons';
+import GlossaryTerm from './GlossaryTerm';
 
 const bgMap = {
   savings: 'bg-sk-stat-savings',
@@ -17,12 +18,12 @@ const iconMap = {
   time: '⏱️',
 };
 
-export default function StatTile({ label, value, bgKey, icon, hint }) {
+export default function StatTile({ label, value, bgKey, icon, hint, glossaryId }) {
   const glyph = icon ?? iconMap[bgKey] ?? null;
 
   return (
     <div
-      className={`rounded-2xl border border-sk-card-border/60 p-4 flex flex-col justify-between min-h-[100px] ${bgMap[bgKey] ?? 'bg-sk-placeholder'}`}
+      className={`rounded-2xl border border-sk-card-border/60 p-4 flex flex-col justify-between min-h-[108px] ${bgMap[bgKey] ?? 'bg-sk-placeholder'}`}
       data-stat={bgKey}
     >
       <div className="flex items-start justify-between gap-2">
@@ -35,12 +36,16 @@ export default function StatTile({ label, value, bgKey, icon, hint }) {
         )}
       </div>
       <div>
-        <p className="text-[10px] font-bold uppercase tracking-widest text-sk-ink/80 leading-tight">
-          {label}
+        <p className="text-xs font-bold uppercase tracking-widest text-sk-ink/90 leading-tight">
+          {glossaryId ? (
+            <GlossaryTerm id={glossaryId}>{label}</GlossaryTerm>
+          ) : (
+            label
+          )}
         </p>
-        <p className="mt-1 text-xl font-semibold text-sk-ink tabular-nums">{value}</p>
+        <p className="mt-1 text-2xl font-semibold text-sk-ink tabular-nums">{value}</p>
         {hint && (
-          <p className="mt-1.5 text-[10px] leading-snug text-sk-ink-muted">{hint}</p>
+          <p className="mt-1.5 text-xs leading-snug text-sk-ink-muted">{hint}</p>
         )}
       </div>
     </div>

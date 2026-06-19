@@ -366,9 +366,22 @@ def _relay_on(house_code: str, house: dict[str, Any], other: dict[str, Any]) -> 
 
 
 def _estimate_load(wattage: float, status: str) -> float:
-    if status == "DEFICIT":
-        return max(wattage + 50.0, 80.0)
-    return max(wattage * 0.45, 10.0)
+    """Estimate household load for LED demo hardware (no real load sensor).
+
+    Previous mock values (80 W deficit floor) made the dashboard show unrealistic
+    loads and negative surplus when a weak solar signal appeared.
+    """
+    led_standby_w = 4.0
+    led_active_w = 8.0
+    status_u = str(status or "").upper()
+    if status_u == "SURPLUS":
+        if wattage <= 0:
+            return led_standby_w
+        # Surplus house: local LED draw is a small fraction of generation
+        return min(max(wattage * 0.25, led_standby_w), wattage * 0.8)
+    if status_u == "DEFICIT":
+        return led_active_w
+    return led_standby_w
 
 
 def get_live_payload() -> dict[str, Any]:

@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import Card from '../components/ui/Card';
 import StatTile from '../components/ui/StatTile';
+import GlossaryTerm from '../components/ui/GlossaryTerm';
 import BatteryOrganism from '../components/energy/BatteryOrganism';
 import SimpleLineChart from '../components/charts/SimpleLineChart';
 import SimpleDualBarChart from '../components/charts/SimpleDualBarChart';
@@ -54,6 +55,7 @@ export default function DashboardPage({ operatorName = 'Barangay Operator' }) {
           value: `${sim.grid_reduction_pct}%`,
           bgKey: 'grid',
           icon: '⚡',
+          glossaryId: 'gridReduction',
           hint: 'Less grid energy bought vs. everyone on their own.',
         },
         {
@@ -62,6 +64,7 @@ export default function DashboardPage({ operatorName = 'Barangay Operator' }) {
           value: String(sim.gini_coefficient),
           bgKey: 'battery',
           icon: '⚖️',
+          glossaryId: 'gini',
           hint: '0 = perfectly fair shares; closer to 1 = uneven distribution.',
         },
         {
@@ -70,7 +73,17 @@ export default function DashboardPage({ operatorName = 'Barangay Operator' }) {
           value: `${co2Kg} kg`,
           bgKey: 'solar',
           icon: '🌱',
+          glossaryId: 'co2',
           hint: 'Estimated emissions avoided from shared solar (0.79 kg/kWh).',
+        },
+        {
+          id: 'time',
+          label: 'Compute Time',
+          value: `${sim.execution_ms ?? '—'}ms`,
+          bgKey: 'grid',
+          icon: '⏱️',
+          glossaryId: 'computeTime',
+          hint: 'Backend simulation runtime — live ESP32 transfers are independent.',
         },
       ]
     : [
@@ -88,6 +101,7 @@ export default function DashboardPage({ operatorName = 'Barangay Operator' }) {
           value: '—',
           bgKey: 'grid',
           icon: '⚡',
+          glossaryId: 'gridReduction',
           hint: 'Run a simulation to see grid draw reduction.',
         },
         {
@@ -96,6 +110,7 @@ export default function DashboardPage({ operatorName = 'Barangay Operator' }) {
           value: '—',
           bgKey: 'battery',
           icon: '⚖️',
+          glossaryId: 'gini',
           hint: 'Run a simulation to see how evenly energy is shared.',
         },
         {
@@ -104,7 +119,17 @@ export default function DashboardPage({ operatorName = 'Barangay Operator' }) {
           value: '—',
           bgKey: 'solar',
           icon: '🌱',
+          glossaryId: 'co2',
           hint: 'Run a simulation to estimate avoided emissions.',
+        },
+        {
+          id: 'time',
+          label: 'Compute Time',
+          value: '—',
+          bgKey: 'grid',
+          icon: '⏱️',
+          glossaryId: 'computeTime',
+          hint: 'Run a simulation to see how fast the greedy model computes.',
         },
       ];
 
@@ -131,8 +156,8 @@ export default function DashboardPage({ operatorName = 'Barangay Operator' }) {
               </>
             ) : (
               <>
-                No simulation yet — open <strong className="text-sk-ink">Simulation</strong> and run
-                greedy sharing to populate these metrics.
+                No simulation yet — open <strong className="text-sk-ink">Simulation</strong> and run{' '}
+                <GlossaryTerm id="greedy">greedy sharing</GlossaryTerm> to populate these metrics.
               </>
             )}
           </p>
@@ -144,7 +169,7 @@ export default function DashboardPage({ operatorName = 'Barangay Operator' }) {
         <p className="text-xs text-sk-ink-muted">Loading latest simulation…</p>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
         {stats.map((stat) => (
           <StatTile
             key={stat.id}
@@ -153,6 +178,7 @@ export default function DashboardPage({ operatorName = 'Barangay Operator' }) {
             bgKey={stat.bgKey}
             icon={stat.icon}
             hint={stat.hint}
+            glossaryId={stat.glossaryId}
           />
         ))}
       </div>
@@ -169,9 +195,9 @@ export default function DashboardPage({ operatorName = 'Barangay Operator' }) {
           </span>
         </div>
         <p className="text-xs text-sk-ink-muted mb-4">
-          Gray dots: K-means on merged dataset ({clusterData?.households?.length ?? 15} households).
-          Pulsing dots: live MQTT from your ESP32s — charge / discharge / balanced from
-          SURPLUS/DEFICIT and solar watts.
+          Gray dots: <GlossaryTerm id="kmeans">K-means</GlossaryTerm> on merged dataset ({clusterData?.households?.length ?? 15} households).
+          Pulsing dots: live <GlossaryTerm id="mqtt">MQTT</GlossaryTerm> from your ESP32s — charge / discharge / balanced from{' '}
+          <GlossaryTerm id="surplus">SURPLUS</GlossaryTerm>/<GlossaryTerm id="deficit">DEFICIT</GlossaryTerm> and solar watts.
         </p>
         {clusterError && (
           <p className="text-sm text-rose-800 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 mb-3">
@@ -188,7 +214,7 @@ export default function DashboardPage({ operatorName = 'Barangay Operator' }) {
             />
             <ClusterMetrics metrics={clusterData?.metrics} summary={clusterData?.summary} />
             {clusterData?.summary && (
-              <p className="text-[10px] text-sk-ink-muted mt-3 text-center">
+              <p className="text-xs text-sk-ink-muted mt-3 text-center">
                 {clusterData.total_rows} CSV rows · {clusterData.households?.length} households clustered
               </p>
             )}
@@ -204,7 +230,7 @@ export default function DashboardPage({ operatorName = 'Barangay Operator' }) {
                 key={p}
                 type="button"
                 onClick={() => setChartPeriod(p)}
-                className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase ${
+                className={`px-2 py-1 rounded-md text-xs font-bold uppercase ${
                   chartPeriod === p ? 'bg-sk-accent text-white' : 'bg-sk-placeholder text-sk-ink-muted'
                 }`}
               >

@@ -6,7 +6,15 @@ Production algorithm: Greedy (Colab/TOPSIS winner). LP and Hybrid planned later.
 
 import os
 import time
+from pathlib import Path
 from typing import Literal
+
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+except ImportError:
+    pass
 
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,6 +41,7 @@ from database import (
     list_runs,
     lookup_barangay_public,
     register_barangay,
+    update_barangay_settings,
     reject_registration,
     reset_barangay_mock_data,
     save_run,
@@ -52,7 +61,6 @@ from mqtt_bridge import (
     get_live_payload,
     get_mqtt_status,
     ingest_mqtt_message,
-    publish_manual_transfer,
     start_mqtt_bridge,
 )
 
@@ -108,6 +116,16 @@ class BarangayRegisterRequest(BaseModel):
     location_lon: float | None = None
 
 
+class BarangayUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=120)
+    contact_email: str | None = Field(default=None, min_length=3, max_length=200)
+    mqtt_broker_host: str | None = Field(default=None, max_length=200)
+    mqtt_broker_port: int | None = Field(default=None, ge=1, le=65535)
+    battery_low_threshold_pct: int | None = Field(default=None, ge=1, le=100)
+    auto_device_discovery: bool | None = None
+    email_notifications: bool | None = None
+
+
 class RegistrationRejectRequest(BaseModel):
     reason: str | None = Field(default=None, max_length=500)
 
@@ -128,12 +146,6 @@ class HouseholdUpdateRequest(BaseModel):
     has_battery: bool | None = None
     status: Literal["active", "pending", "inactive"] | None = None
     cluster_action: Literal["charge", "discharge", "balanced", "auto"] | None = None
-
-
-class ManualTransferRequest(BaseModel):
-    from_house: Literal["A", "B", "House A", "House B"] = "A"
-    to_house: Literal["A", "B", "House A", "House B"] = "B"
-    watts: int = Field(ge=0, le=500, default=100)
 
 
 class MqttIngestBody(BaseModel):
@@ -330,6 +342,23 @@ def barangay_register(
             location_lat=body.location_lat,
             location_lon=body.location_lon,
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.patch("/barangays/mine")
+def barangay_update(
+    body: BarangayUpdateRequest,
+    profile: dict = Depends(_require_operator),
+) -> dict:
+    payload = body.model_dump(exclude_unset=True)
+    if not payload:
+        bg = get_barangay_for_operator(profile["id"])
+        if not bg:
+            raise HTTPException(status_code=404, detail="No barangay registered yet.")
+        return dict(bg)
+    try:
+        return update_barangay_settings(profile["id"], **payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -562,15 +591,6 @@ def household_delete(
         return delete_operator_household(household_id, int(barangay["id"]))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@router.post("/live/manual-transfer")
-def live_manual_transfer(
-    body: ManualTransferRequest,
-    _profile: dict = Depends(_require_operator),
-) -> dict:
-    """Publish a manual transfer command over MQTT (requires firmware subscriber)."""
-    return publish_manual_transfer(body.from_house, body.to_house, body.watts)
 
 
 @router.get("/households/{household_id}")

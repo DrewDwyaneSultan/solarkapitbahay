@@ -39,6 +39,16 @@ export async function fetchMyBarangay(accessToken) {
   return res.json();
 }
 
+export async function updateMyBarangay(accessToken, payload) {
+  const res = await fetch(`${API_BASE}/api/barangays/mine`, {
+    method: 'PATCH',
+    headers: authHeaders(accessToken),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
 export async function registerBarangay(accessToken, payload) {
   const res = await fetch(`${API_BASE}/api/barangays/register`, {
     method: 'POST',
