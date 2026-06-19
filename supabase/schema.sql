@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS households (
     circuit_name            TEXT,
     household_code          TEXT,
     claimable               SMALLINT DEFAULT 0,
+    cluster_action          TEXT CHECK (cluster_action IN ('charge','discharge','balanced')),
     registered_at           TIMESTAMPTZ,
     approved_by_user_id     TEXT
 );
@@ -150,6 +151,8 @@ WHERE barangay_code IS NULL;
 
 ALTER TABLE households ADD COLUMN IF NOT EXISTS household_code TEXT;
 ALTER TABLE households ADD COLUMN IF NOT EXISTS claimable SMALLINT DEFAULT 0;
+ALTER TABLE households ADD COLUMN IF NOT EXISTS cluster_action TEXT
+    CHECK (cluster_action IS NULL OR cluster_action IN ('charge','discharge','balanced'));
 
 ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS barangay_id INTEGER REFERENCES barangays(id) ON DELETE SET NULL;
 

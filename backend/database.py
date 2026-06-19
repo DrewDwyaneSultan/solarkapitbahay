@@ -408,6 +408,10 @@ def _migrate_onboarding(conn) -> None:
             conn.execute("ALTER TABLE households ADD COLUMN household_code TEXT")
             conn.execute("ALTER TABLE households ADD COLUMN claimable INTEGER DEFAULT 0")
 
+    hh_cols = _table_columns(conn, "households")
+    if "cluster_action" not in hh_cols:
+        conn.execute("ALTER TABLE households ADD COLUMN cluster_action TEXT")
+
     profile_cols = _table_columns(conn, "user_profiles")
     if profile_cols and "barangay_id" not in profile_cols:
         conn.execute("ALTER TABLE user_profiles ADD COLUMN barangay_id INTEGER REFERENCES barangays(id)")
@@ -477,6 +481,8 @@ def ensure_app_db() -> None:
             return
         if os.getenv("VERCEL") and _postgres_schema_ready():
             try:
+                with db_connection() as conn:
+                    _migrate_onboarding(conn)
                 seed_database()
             except Exception:
                 pass
@@ -740,7 +746,7 @@ def list_households(barangay_id: int | None = None, claimable_only: bool = False
             f"""
             SELECT id, barangay_id, head_name, purok, address, has_solar, has_battery,
                    battery_capacity_kwh, income_tier, status, circuit_key, circuit_name,
-                   household_code, claimable
+                   household_code, claimable, cluster_action
             FROM households
             WHERE {where}
             ORDER BY id
@@ -954,6 +960,7 @@ def update_operator_household(
     has_solar: bool | None = None,
     has_battery: bool | None = None,
     status: str | None = None,
+    cluster_action: str | None = None,
 ) -> dict:
     existing = get_household(household_id)
     if not existing:
@@ -983,6 +990,15 @@ def update_operator_household(
     if status is not None:
         fields.append("status = ?")
         params.append(status)
+    if cluster_action is not None:
+        if cluster_action in ("auto", ""):
+            fields.append("cluster_action = ?")
+            params.append(None)
+        elif cluster_action in ("charge", "discharge", "balanced"):
+            fields.append("cluster_action = ?")
+            params.append(cluster_action)
+        else:
+            raise ValueError("cluster_action must be charge, discharge, balanced, or auto")
 
     if not fields:
         return existing
@@ -1194,7 +1210,7 @@ def get_household(household_id: str) -> dict | None:
             """
             SELECT id, barangay_id, head_name, purok, address, has_solar, has_battery,
                    battery_capacity_kwh, battery_model, income_tier, status,
-                   circuit_key, circuit_name, registered_at
+                   circuit_key, circuit_name, cluster_action, registered_at
             FROM households
             WHERE id = ?
             """,
@@ -1205,6 +1221,24 @@ def get_household(household_id: str) -> dict | None:
     row["has_solar"] = bool(row["has_solar"])
     row["has_battery"] = bool(row["has_battery"])
     return row
+
+
+def load_cluster_overrides() -> dict[str, str]:
+    """Manual charge/discharge/balanced overrides set by the operator."""
+    with db_connection() as conn:
+        rows = fetchall(
+            conn,
+            """
+            SELECT id, cluster_action FROM households
+            WHERE cluster_action IS NOT NULL AND cluster_action != ''
+            """,
+        )
+    valid = {"charge", "discharge", "balanced"}
+    return {
+        str(r["id"]): str(r["cluster_action"])
+        for r in rows
+        if str(r.get("cluster_action", "")) in valid
+    }
 
 
 def load_hourly_rows_from_db() -> list[dict[str, str]]:

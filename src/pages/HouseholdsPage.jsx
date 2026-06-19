@@ -55,6 +55,7 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
     hasSolar: false,
     hasBattery: false,
     status: 'active',
+    clusterAction: 'auto',
   });
 
   const loadData = async () => {
@@ -77,6 +78,7 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
           hasBattery: r.has_battery,
           status: r.status ?? 'active',
           householdCode: r.household_code,
+          clusterAction: r.cluster_action ?? 'auto',
         })),
       );
       setRegs(
@@ -142,6 +144,7 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
       hasSolar: row.hasSolar,
       hasBattery: row.hasBattery,
       status: row.status,
+      clusterAction: row.clusterAction ?? actionById[row.id]?.action ?? 'auto',
     });
   };
 
@@ -157,6 +160,7 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
         has_solar: editForm.hasSolar,
         has_battery: editForm.hasBattery,
         status: editForm.status,
+        cluster_action: editForm.clusterAction,
       });
       setShowEditForm(false);
       notify(`Updated ${editForm.headName.trim()}. Clustering refreshed.`);
@@ -689,6 +693,24 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
                   />
                   Has battery
                 </label>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-sk-ink-muted mb-1.5">
+                    Battery cluster action
+                  </label>
+                  <select
+                    value={editForm.clusterAction}
+                    onChange={(e) => setEditForm((f) => ({ ...f, clusterAction: e.target.value }))}
+                    className="w-full h-10 rounded-md border border-sk-card-border/60 bg-white px-3 text-sm"
+                  >
+                    <option value="auto">Auto (K-means from mock energy data)</option>
+                    <option value="charge">Charge</option>
+                    <option value="discharge">Discharge</option>
+                    <option value="balanced">Balanced</option>
+                  </select>
+                  <p className="text-[11px] text-sk-ink-muted mt-1">
+                    Manual override appears on the Dashboard clustering chart and household table.
+                  </p>
+                </div>
                 <div>
                   <label className="block text-[10px] font-bold uppercase tracking-widest text-sk-ink-muted mb-1.5">
                     Status

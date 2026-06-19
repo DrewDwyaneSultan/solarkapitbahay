@@ -124,6 +124,7 @@ class HouseholdUpdateRequest(BaseModel):
     has_solar: bool | None = None
     has_battery: bool | None = None
     status: Literal["active", "pending", "inactive"] | None = None
+    cluster_action: Literal["charge", "discharge", "balanced", "auto"] | None = None
 
 
 class ManualTransferRequest(BaseModel):
@@ -495,15 +496,18 @@ def household_update(
     barangay: dict = Depends(_operator_barangay),
 ) -> dict:
     try:
+        payload = body.model_dump(exclude_unset=True)
+        extra = {"cluster_action": payload["cluster_action"]} if "cluster_action" in payload else {}
         return update_operator_household(
             household_id,
             int(barangay["id"]),
-            head_name=body.head_name,
-            address=body.address,
-            purok=body.purok,
-            has_solar=body.has_solar,
-            has_battery=body.has_battery,
-            status=body.status,
+            head_name=payload.get("head_name"),
+            address=payload.get("address"),
+            purok=payload.get("purok"),
+            has_solar=payload.get("has_solar"),
+            has_battery=payload.get("has_battery"),
+            status=payload.get("status"),
+            **extra,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -249,6 +249,16 @@ def _assign_actions(centroids: list[list[float]]) -> dict[int, str]:
     return {order[0]: "charge", order[1]: "balanced", order[2]: "discharge"}
 
 
+def _apply_household_action(h: dict[str, Any], action: str, *, manual: bool = False) -> None:
+    action_meta = ACTION_META[action]
+    h["action"] = action
+    h["action_label"] = action_meta["label"]
+    h["action_color"] = action_meta["color"]
+    h["action_description"] = action_meta["description"]
+    if manual:
+        h["cluster_manual"] = True
+
+
 def run_clustering(csv_path: Path | None = None, k: int = 3, seed: int = 42) -> dict[str, Any]:
     dataset_path = _resolve_dataset_path(csv_path)
     raw = load_csv_rows(csv_path)
@@ -281,14 +291,23 @@ def run_clustering(csv_path: Path | None = None, k: int = 3, seed: int = 42) -> 
     labels, centroids = _kmeans(scaled, k, seed=seed)
     action_by_cluster = _assign_actions(centroids)
 
+    overrides: dict[str, str] = {}
+    try:
+        from database import load_cluster_overrides
+
+        overrides = load_cluster_overrides()
+    except Exception:
+        pass
+
     for i, h in enumerate(households):
-        action = action_by_cluster[labels[i]]
-        action_meta = ACTION_META[action]
-        h["cluster_id"] = int(labels[i])
-        h["action"] = action
-        h["action_label"] = action_meta["label"]
-        h["action_color"] = action_meta["color"]
-        h["action_description"] = action_meta["description"]
+        hid = h["household_id"]
+        if hid in overrides:
+            _apply_household_action(h, overrides[hid], manual=True)
+            h["cluster_id"] = -1
+        else:
+            action = action_by_cluster[labels[i]]
+            _apply_household_action(h, action)
+            h["cluster_id"] = int(labels[i])
         h["scatter_x"] = h["net_load_kwh"]
         h["scatter_y"] = h["battery_soc_pct"]
 
