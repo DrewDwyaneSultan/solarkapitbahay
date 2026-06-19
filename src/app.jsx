@@ -6,6 +6,11 @@ import HouseholdStatusScreen from './pages/household/HouseholdStatusScreen';
 import BarangayOnboarding from './pages/BarangayOnboarding';
 import { useAuth, profileToUser, getProfileRole } from './hooks/useAuth';
 import { fetchMyBarangay } from './services/registrationApi';
+import {
+  clearIntendedRole,
+  consumeIntendedRoleFromUrl,
+  readIntendedRole,
+} from './utils/intendedRole';
 
 function LoadingScreen() {
   return (
@@ -15,17 +20,52 @@ function LoadingScreen() {
   );
 }
 
+function HouseholdRoutes({ householdUser, onLogout }) {
+  if (householdUser.status === 'pending' || householdUser.status === 'rejected') {
+    return (
+      <HouseholdStatusScreen
+        status={householdUser.status}
+        displayName={householdUser.name}
+        barangayName={householdUser.barangayName}
+        rejectionReason={householdUser.rejectionReason}
+        onLogout={onLogout}
+      />
+    );
+  }
+
+  return (
+    <HouseholdMemberApp
+      member={{
+        name: householdUser.name ?? 'User',
+        householdId: householdUser.householdId ?? 'HH-01',
+      }}
+      barangay={{
+        name: householdUser.barangayName ?? 'Barangay',
+        householdCode: householdUser.house ?? 'household_code',
+      }}
+      onLogout={onLogout}
+    />
+  );
+}
+
 function App() {
   const auth = useAuth();
   const [demoUser, setDemoUser] = useState(null);
   const [operatorBarangay, setOperatorBarangay] = useState(null);
   const [barangayCheckDone, setBarangayCheckDone] = useState(false);
+  const [intendedRole, setIntendedRole] = useState(() => readIntendedRole());
+
+  useEffect(() => {
+    setIntendedRole(consumeIntendedRoleFromUrl());
+  }, []);
 
   const handleLogout = async () => {
     await auth.signOut();
     setDemoUser(null);
     setOperatorBarangay(null);
     setBarangayCheckDone(false);
+    clearIntendedRole();
+    setIntendedRole(null);
   };
 
   const refreshOperatorBarangay = useCallback(async () => {
@@ -54,7 +94,6 @@ function App() {
       return;
     }
 
-    // Already linked to a barangay — show dashboard immediately, refresh in background.
     if (auth.profile?.barangay_id || operatorBarangay) {
       setBarangayCheckDone(true);
       if (!operatorBarangay && auth.profile?.barangay_id) {
@@ -75,7 +114,6 @@ function App() {
     refreshOperatorBarangay,
   ]);
 
-  // Never block the UI forever if barangay lookup is slow.
   useEffect(() => {
     if (barangayCheckDone) return undefined;
     const timer = setTimeout(() => setBarangayCheckDone(true), 6000);
@@ -86,41 +124,44 @@ function App() {
     return <LoadingScreen />;
   }
 
-  const activeUser = demoUser ?? auth.user;
   const profileRole = auth.profile ? getProfileRole(auth.profile) : null;
-  const effectiveRole =
-    profileRole ?? (activeUser?.role === 'household' ? 'household' : 'operator');
-  const householdUser =
-    profileRole === 'household' && auth.profile
-      ? profileToUser(auth.profile)
-      : activeUser?.role === 'household'
-        ? activeUser
-        : null;
+  const wantsHousehold = intendedRole === 'household';
 
-  if (auth.needsProfile && auth.session) {
+  const needsHouseholdSetup =
+    Boolean(auth.session) &&
+    wantsHousehold &&
+    (auth.needsProfile || !auth.profile || profileRole !== 'household');
+
+  const needsOperatorProfile = Boolean(auth.session) && auth.needsProfile && !wantsHousehold;
+
+  if ((needsHouseholdSetup || needsOperatorProfile) && auth.session) {
     return (
       <Login
         needsProfile
         session={auth.session}
         supabaseEnabled={auth.supabaseEnabled}
-        defaultRole={
-          typeof sessionStorage !== 'undefined'
-            ? sessionStorage.getItem('skb_intended_role') || 'household'
-            : 'household'
-        }
+        defaultRole={wantsHousehold ? 'household' : 'operator'}
+        forceHousehold={wantsHousehold}
         onProfileComplete={(saved) => {
           auth.setProfileFromSave(saved);
           setDemoUser(null);
-          try {
-            sessionStorage.removeItem('skb_intended_role');
-          } catch {
-            /* ignore */
+          if (getProfileRole(saved) === 'household') {
+            clearIntendedRole();
+            setIntendedRole(null);
           }
         }}
         onSignIn={() => {}}
       />
     );
   }
+
+  if (auth.session && auth.profile && profileRole === 'household') {
+    return (
+      <HouseholdRoutes householdUser={profileToUser(auth.profile)} onLogout={handleLogout} />
+    );
+  }
+
+  const activeUser = demoUser ?? auth.user;
 
   if (!activeUser) {
     if (auth.session && auth.authError) {
@@ -133,14 +174,6 @@ function App() {
             </p>
             <p className="text-sm text-rose-800 bg-rose-50 border border-rose-200 rounded-md px-3 py-2 mb-4">
               {auth.authError}
-            </p>
-            <p className="text-xs text-sk-ink-muted mb-4">
-              On Vercel, set <code className="text-xs">SUPABASE_URL</code> (same value as{' '}
-              <code className="text-xs">VITE_SUPABASE_URL</code>) and{' '}
-              <code className="text-xs">SUPABASE_JWT_SECRET</code> (legacy JWT secret), then redeploy.
-              Locally, add both to <code className="text-xs">.env</code> and restart{' '}
-              <code className="text-xs">npm run dev:backend</code>. New Supabase projects use ES256
-              tokens — the URL is required for verification.
             </p>
             <button
               type="button"
@@ -158,6 +191,7 @@ function App() {
       return (
         <Login
           supabaseEnabled={auth.supabaseEnabled}
+          onIntendedRoleChange={setIntendedRole}
           onSignIn={({ user, session }) => {
             if (user?.role === 'household') {
               setDemoUser(user);
@@ -176,36 +210,12 @@ function App() {
     return <LoadingScreen />;
   }
 
-  if (effectiveRole === 'household' && householdUser) {
-    if (householdUser.status === 'pending' || householdUser.status === 'rejected') {
-      return (
-        <HouseholdStatusScreen
-          status={householdUser.status}
-          displayName={householdUser.name}
-          barangayName={householdUser.barangayName}
-          rejectionReason={householdUser.rejectionReason}
-          onLogout={handleLogout}
-        />
-      );
-    }
-
-    return (
-      <HouseholdMemberApp
-        member={{
-          name: householdUser.name ?? 'User',
-          householdId: householdUser.householdId ?? 'HH-01',
-        }}
-        barangay={{
-          name: householdUser.barangayName ?? 'Barangay',
-          householdCode: householdUser.house ?? 'household_code',
-        }}
-        onLogout={handleLogout}
-      />
-    );
+  if (demoUser?.role === 'household') {
+    return <HouseholdRoutes householdUser={demoUser} onLogout={handleLogout} />;
   }
 
   if (
-    effectiveRole === 'operator' &&
+    profileRole === 'operator' &&
     auth.supabaseEnabled &&
     auth.session &&
     !demoUser &&

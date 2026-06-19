@@ -4,7 +4,12 @@ import Toggle from './components/ui/Toggle';
 import { supabase, isSupabaseConfigured } from './lib/supabaseClient';
 import { saveProfile } from './services/authApi';
 import { lookupBarangay } from './services/registrationApi';
-import { profileToUser } from './hooks/useAuth';
+import { profileToUser, getProfileRole } from './hooks/useAuth';
+import {
+  persistIntendedRole,
+  clearIntendedRole,
+  consumeIntendedRoleFromUrl,
+} from './utils/intendedRole';
 
 const demoAccounts = {
   'operator@solarkapitbahay.com': {
@@ -28,17 +33,17 @@ const demoAccounts = {
   },
 };
 
-const INTENDED_ROLE_KEY = 'skb_intended_role';
-
 export default function Login({
   onSignIn,
   onProfileComplete,
+  onIntendedRoleChange,
   needsProfile = false,
   session = null,
   supabaseEnabled = isSupabaseConfigured(),
   defaultRole = 'operator',
+  forceHousehold = false,
 }) {
-  const [role, setRole] = useState(defaultRole);
+  const [role, setRole] = useState(forceHousehold ? 'household' : defaultRole);
   const [mode, setMode] = useState(needsProfile ? 'complete' : 'signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -63,24 +68,44 @@ export default function Login({
   }, [needsProfile]);
 
   useEffect(() => {
-    if (needsProfile && defaultRole) setRole(defaultRole);
-  }, [needsProfile, defaultRole]);
-
-  const persistIntendedRole = (nextRole) => {
-    try {
-      sessionStorage.setItem(INTENDED_ROLE_KEY, nextRole);
-    } catch {
-      /* ignore */
+    const fromUrl = consumeIntendedRoleFromUrl();
+    if (fromUrl) {
+      setRole(fromUrl);
+      onIntendedRoleChange?.(fromUrl);
     }
-  };
+  }, [onIntendedRoleChange]);
+
+  useEffect(() => {
+    if (forceHousehold) {
+      setRole('household');
+      persistIntendedRole('household');
+      return;
+    }
+    if (needsProfile && defaultRole) setRole(defaultRole);
+  }, [needsProfile, defaultRole, forceHousehold]);
+
+  useEffect(() => {
+    if (!needsProfile || !session?.user || displayName) return;
+    const meta = session.user.user_metadata ?? {};
+    const name =
+      meta.full_name ||
+      meta.name ||
+      [meta.given_name, meta.family_name].filter(Boolean).join(' ') ||
+      session.user.email?.split('@')[0] ||
+      '';
+    if (name) setDisplayName(name);
+  }, [needsProfile, session, displayName]);
 
   const setRoleAndPersist = (nextRole) => {
+    if (forceHousehold && nextRole !== 'household') return;
     setRole(nextRole);
     persistIntendedRole(nextRole);
+    onIntendedRoleChange?.(nextRole);
   };
 
   useEffect(() => {
-    if (mode !== 'complete' || role !== 'household') return;
+    const effectiveRole = forceHousehold ? 'household' : role;
+    if (mode !== 'complete' || effectiveRole !== 'household') return;
     const code = barangayCode.trim().toUpperCase();
     if (!code) {
       setBarangayInfo(null);
@@ -103,7 +128,7 @@ export default function Login({
     return () => {
       cancelled = true;
     };
-  }, [mode, role, barangayCode]);
+  }, [mode, role, forceHousehold, barangayCode]);
 
   const resetMessages = () => {
     setError('');
@@ -115,9 +140,10 @@ export default function Login({
     resetMessages();
     persistIntendedRole(role);
     setBusy(true);
+    const redirectTo = `${window.location.origin}${window.location.pathname}?intended_role=${encodeURIComponent(role)}`;
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: window.location.origin },
+      options: { redirectTo },
     });
     if (oauthError) setError(oauthError.message);
     setBusy(false);
@@ -173,7 +199,8 @@ export default function Login({
       setError('Session expired. Please sign in again.');
       return;
     }
-    if (role === 'household') {
+    const profileRole = forceHousehold ? 'household' : role;
+    if (profileRole === 'household') {
       if (!barangayCode.trim()) {
         setError('Enter the barangay code from your operator.');
         return;
@@ -191,14 +218,14 @@ export default function Login({
     setBusy(true);
     try {
       const saved = await saveProfile(token, {
-        role,
+        role: profileRole,
         display_name: displayName.trim(),
         address: address.trim() || null,
-        barangay_code: role === 'household' ? barangayCode.trim().toUpperCase() || null : null,
+        barangay_code: profileRole === 'household' ? barangayCode.trim().toUpperCase() || null : null,
         household_id:
-          role === 'household' && joinMode === 'existing' ? householdId || null : null,
+          profileRole === 'household' && joinMode === 'existing' ? householdId || null : null,
         household_code:
-          role === 'household' && joinMode === 'existing' ? householdCode.trim().toUpperCase() || null : null,
+          profileRole === 'household' && joinMode === 'existing' ? householdCode.trim().toUpperCase() || null : null,
         has_solar: hasSolar,
         has_battery: hasBattery,
         battery_model: hasBattery ? batteryModel.trim() || null : null,
@@ -206,10 +233,8 @@ export default function Login({
           hasBattery && batteryCapacity ? Number.parseFloat(batteryCapacity) : null,
       });
       onProfileComplete?.(saved);
-      try {
-        sessionStorage.removeItem(INTENDED_ROLE_KEY);
-      } catch {
-        /* ignore */
+      if (getProfileRole(saved) === 'household') {
+        clearIntendedRole();
       }
       onSignIn?.({ user: profileToUser(saved) });
     } catch (err) {
@@ -318,28 +343,35 @@ export default function Login({
                 <span className="italic font-semibold">profile.</span>
               </h3>
               <form className="space-y-4" onSubmit={handleCompleteProfile}>
-                <div className="flex bg-white/70 p-1 rounded-lg border border-sk-card-border/50 mb-2">
-                  <button
-                    type="button"
-                    onClick={() => setRoleAndPersist('operator')}
-                    className={`flex-1 py-1 text-[10px] uppercase tracking-widest font-bold rounded-md ${
-                      role === 'operator' ? 'bg-white text-sk-ink shadow-sm' : 'text-sk-ink-muted'
-                    }`}
-                  >
-                    Operator
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setRoleAndPersist('household')}
-                    className={`flex-1 py-1 text-[10px] uppercase tracking-widest font-bold rounded-md ${
-                      role === 'household' ? 'bg-white text-sk-ink shadow-sm' : 'text-sk-ink-muted'
-                    }`}
-                  >
-                    Household
-                  </button>
-                </div>
+                {!forceHousehold && (
+                  <div className="flex bg-white/70 p-1 rounded-lg border border-sk-card-border/50 mb-2">
+                    <button
+                      type="button"
+                      onClick={() => setRoleAndPersist('operator')}
+                      className={`flex-1 py-1 text-[10px] uppercase tracking-widest font-bold rounded-md ${
+                        role === 'operator' ? 'bg-white text-sk-ink shadow-sm' : 'text-sk-ink-muted'
+                      }`}
+                    >
+                      Operator
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRoleAndPersist('household')}
+                      className={`flex-1 py-1 text-[10px] uppercase tracking-widest font-bold rounded-md ${
+                        role === 'household' ? 'bg-white text-sk-ink shadow-sm' : 'text-sk-ink-muted'
+                      }`}
+                    >
+                      Household
+                    </button>
+                  </div>
+                )}
+                {forceHousehold && (
+                  <p className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2 mb-1">
+                    Joining as a <strong>household member</strong> — enter your barangay code below.
+                  </p>
+                )}
                 <Field label="Display name" value={displayName} onChange={setDisplayName} required />
-                {role === 'household' && (
+                {(forceHousehold || role === 'household') && (
                   <>
                     <Field
                       label="Barangay code"
