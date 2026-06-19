@@ -876,6 +876,7 @@ def attach_mock_hourly_for_household(
     has_battery: bool = True,
     barangay_id: int,
     replace: bool = False,
+    conn: Any | None = None,
 ) -> int:
     """Attach 24 h synthetic profile so K-means clustering includes this household."""
     from merged_dataset_loader import expand_single_household
@@ -889,12 +890,18 @@ def attach_mock_hourly_for_household(
     if not rows:
         return 0
 
-    with db_connection() as conn:
-        dataset_id = _resolve_dataset_id_for_barangay(conn, barangay_id)
+    def _apply(active_conn: Any) -> int:
+        dataset_id = _resolve_dataset_id_for_barangay(active_conn, barangay_id)
         if replace:
-            _delete_household_hourly(conn, household_id)
-        _insert_household_hourly_rows(conn, dataset_id, rows)
-    return len(rows)
+            _delete_household_hourly(active_conn, household_id)
+        _insert_household_hourly_rows(active_conn, dataset_id, rows)
+        return len(rows)
+
+    if conn is not None:
+        return _apply(conn)
+
+    with db_connection() as own_conn:
+        return _apply(own_conn)
 
 
 def create_operator_household(
@@ -2172,10 +2179,16 @@ def list_registrations(
             """,
             tuple(params),
         )
-    for row in rows:
-        row["has_solar"] = bool(row["has_solar"])
-        row["has_battery"] = bool(row["has_battery"])
-    return rows
+    return [
+        _json_safe_profile(
+            {
+                **row,
+                "has_solar": bool(row["has_solar"]),
+                "has_battery": bool(row["has_battery"]),
+            }
+        )
+        for row in rows
+    ]
 
 
 def _next_household_id_conn(conn, barangay_id: int) -> str:
@@ -2217,6 +2230,7 @@ def approve_registration(
     household_id = reg.get("household_id")
 
     with db_connection() as conn:
+        _ensure_roles_column(conn)
         if not household_id:
             household_id = _next_household_id_conn(conn, barangay_id)
             bg_code = (bg or {}).get("barangay_code", "SK")
@@ -2247,6 +2261,15 @@ def approve_registration(
                 purok=reg.get("purok") or "Purok 1",
                 has_battery=bool(reg["has_battery"]),
                 barangay_id=barangay_id,
+                conn=conn,
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE households SET claimable = 0, status = 'active'
+                WHERE id = ? AND barangay_id = ?
+                """,
+                (household_id, barangay_id),
             )
 
         conn.execute(
@@ -2278,7 +2301,7 @@ def approve_registration(
         )
 
     updated = _get_registration(registration_id)
-    return updated or {}
+    return _json_safe_profile(updated) if updated else {}
 
 
 def reject_registration(
@@ -2311,7 +2334,7 @@ def reject_registration(
             (now, reg["applicant_user_id"]),
         )
 
-    return _get_registration(registration_id) or {}
+    return _json_safe_profile(_get_registration(registration_id) or {})
 
 
 def _get_registration(registration_id: int) -> dict | None:

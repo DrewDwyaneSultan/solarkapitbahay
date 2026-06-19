@@ -9,7 +9,16 @@ function authHeaders(accessToken) {
 
 async function parseError(res) {
   const body = await res.json().catch(() => ({}));
-  throw new Error(body.detail ?? `Request failed (${res.status})`);
+  const raw = body.detail;
+  const detail =
+    typeof raw === 'string'
+      ? raw
+      : Array.isArray(raw)
+        ? raw.map((d) => d?.msg ?? JSON.stringify(d)).join('; ')
+        : raw
+          ? String(raw)
+          : null;
+  throw new Error(detail ?? `Request failed (${res.status})`);
 }
 
 export async function lookupBarangay(code) {

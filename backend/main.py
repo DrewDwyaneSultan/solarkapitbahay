@@ -362,6 +362,10 @@ def registration_approve(
         return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Approval failed: {exc}") from exc
 
 
 @router.patch("/registrations/{registration_id}/reject")
