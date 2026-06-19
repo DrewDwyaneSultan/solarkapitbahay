@@ -420,6 +420,7 @@ function App() {
           initials: activeUser?.initials ?? 'JU',
           name: activeUser?.name ?? 'Operator',
           role: activeUser?.roleLabel ?? 'Barangay Operator',
+          email: auth.session?.user?.email ?? '',
         }}
         barangayName={barangayName}
         barangayCode={barangayCode}

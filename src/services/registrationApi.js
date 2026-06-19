@@ -1,3 +1,5 @@
+import { parseApiError } from './apiErrors';
+
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
 
 function authHeaders(accessToken) {
@@ -7,26 +9,12 @@ function authHeaders(accessToken) {
   };
 }
 
-async function parseError(res) {
-  const body = await res.json().catch(() => ({}));
-  const raw = body.detail;
-  const detail =
-    typeof raw === 'string'
-      ? raw
-      : Array.isArray(raw)
-        ? raw.map((d) => d?.msg ?? JSON.stringify(d)).join('; ')
-        : raw
-          ? String(raw)
-          : null;
-  throw new Error(detail ?? `Request failed (${res.status})`);
-}
-
 export async function lookupBarangay(code) {
   const res = await fetch(
     `${API_BASE}/api/barangays/lookup?code=${encodeURIComponent(code.trim())}`,
   );
   if (res.status === 404) return null;
-  if (!res.ok) await parseError(res);
+  if (!res.ok) throw await parseApiError(res);
   return res.json();
 }
 
@@ -35,7 +23,7 @@ export async function fetchMyBarangay(accessToken) {
     headers: authHeaders(accessToken),
   });
   if (res.status === 404) return null;
-  if (!res.ok) await parseError(res);
+  if (!res.ok) throw await parseApiError(res);
   return res.json();
 }
 
@@ -45,7 +33,7 @@ export async function updateMyBarangay(accessToken, payload) {
     headers: authHeaders(accessToken),
     body: JSON.stringify(payload),
   });
-  if (!res.ok) await parseError(res);
+  if (!res.ok) throw await parseApiError(res);
   return res.json();
 }
 
@@ -55,7 +43,7 @@ export async function registerBarangay(accessToken, payload) {
     headers: authHeaders(accessToken),
     body: JSON.stringify(payload),
   });
-  if (!res.ok) await parseError(res);
+  if (!res.ok) throw await parseApiError(res);
   return res.json();
 }
 
@@ -63,7 +51,7 @@ export async function fetchRegistrations(accessToken, status = 'pending') {
   const res = await fetch(`${API_BASE}/api/registrations?status=${status}`, {
     headers: authHeaders(accessToken),
   });
-  if (!res.ok) await parseError(res);
+  if (!res.ok) throw await parseApiError(res);
   return res.json();
 }
 
@@ -72,7 +60,7 @@ export async function approveRegistration(accessToken, registrationId) {
     method: 'PATCH',
     headers: authHeaders(accessToken),
   });
-  if (!res.ok) await parseError(res);
+  if (!res.ok) throw await parseApiError(res);
   return res.json();
 }
 
@@ -82,7 +70,7 @@ export async function rejectRegistration(accessToken, registrationId, reason) {
     headers: authHeaders(accessToken),
     body: JSON.stringify({ reason: reason || null }),
   });
-  if (!res.ok) await parseError(res);
+  if (!res.ok) throw await parseApiError(res);
   return res.json();
 }
 
@@ -90,7 +78,7 @@ export async function fetchHouseholdsByBarangay(barangayCode, { claimableOnly = 
   const params = new URLSearchParams({ barangay_code: barangayCode });
   if (claimableOnly) params.set('claimable_only', 'true');
   const res = await fetch(`${API_BASE}/api/households?${params}`);
-  if (!res.ok) await parseError(res);
+  if (!res.ok) throw await parseApiError(res);
   const data = await res.json();
   return data.households ?? [];
 }
@@ -101,7 +89,7 @@ export async function createHousehold(accessToken, payload) {
     headers: authHeaders(accessToken),
     body: JSON.stringify(payload),
   });
-  if (!res.ok) await parseError(res);
+  if (!res.ok) throw await parseApiError(res);
   return res.json();
 }
 
@@ -111,7 +99,7 @@ export async function updateHousehold(accessToken, householdId, payload) {
     headers: authHeaders(accessToken),
     body: JSON.stringify(payload),
   });
-  if (!res.ok) await parseError(res);
+  if (!res.ok) throw await parseApiError(res);
   return res.json();
 }
 
@@ -120,7 +108,7 @@ export async function deleteHousehold(accessToken, householdId) {
     method: 'DELETE',
     headers: authHeaders(accessToken),
   });
-  if (!res.ok) await parseError(res);
+  if (!res.ok) throw await parseApiError(res);
   return res.json();
 }
 
@@ -129,6 +117,6 @@ export async function resetMockHouseholds(accessToken) {
     method: 'POST',
     headers: authHeaders(accessToken),
   });
-  if (!res.ok) await parseError(res);
+  if (!res.ok) throw await parseApiError(res);
   return res.json();
 }

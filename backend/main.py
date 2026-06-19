@@ -90,6 +90,8 @@ class SimulationRequest(BaseModel):
     households: int = Field(ge=5, le=100, default=50)
     battery_capacity_kwh: float = Field(ge=5, le=200, default=100)
     simulation_days: int = Field(ge=7, le=90, default=SIM_DAYS_DEFAULT)
+    min_soc_pct: float = Field(ge=10, le=50, default=20)
+    max_soc_pct: float = Field(ge=70, le=100, default=95)
     seed: int = Field(default=42, ge=0)
     algorithm: Literal["greedy"] = "greedy"
 
@@ -318,13 +320,19 @@ def barangay_lookup(code: str) -> dict:
 
 
 @router.get("/barangays/mine")
-def barangay_mine(profile: dict = Depends(_require_profile)) -> dict:
+def barangay_mine(
+    profile: dict = Depends(_require_profile),
+    email: str = Depends(get_token_email),
+) -> dict:
     if not profile_has_role(profile, "operator"):
         raise HTTPException(status_code=403, detail="Operators only.")
     bg = get_barangay_for_operator(profile["id"])
     if not bg:
         raise HTTPException(status_code=404, detail="No barangay registered yet.")
-    return dict(bg)
+    row = dict(bg)
+    if not row.get("contact_email") and email:
+        row["contact_email"] = email.strip().lower()
+    return row
 
 
 @router.post("/barangays/register")
@@ -452,6 +460,8 @@ def run_simulation(body: SimulationRequest) -> dict:
         battery_capacity_kwh=body.battery_capacity_kwh,
         days=body.simulation_days,
         seed=body.seed,
+        min_soc_pct=body.min_soc_pct,
+        max_soc_pct=body.max_soc_pct,
     )
     execution_ms = round((time.perf_counter() - started) * 1000, 2)
 

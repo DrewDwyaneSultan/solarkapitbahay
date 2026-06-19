@@ -1,8 +1,19 @@
 import React, { useState } from 'react';
 import BrandLogo from '../components/BrandLogo';
 import { registerBarangay } from '../services/registrationApi';
+import { ToastProvider, useToast } from '../context/ToastContext';
+import { validateBarangayOnboarding } from '../utils/userMessages';
 
-export default function BarangayOnboarding({ accessToken, operatorName, onComplete }) {
+export default function BarangayOnboarding(props) {
+  return (
+    <ToastProvider>
+      <BarangayOnboardingInner {...props} />
+    </ToastProvider>
+  );
+}
+
+function BarangayOnboardingInner({ accessToken, operatorName, onComplete }) {
+  const { showToast, showError } = useToast();
   const [name, setName] = useState('');
   const [contactEmail, setContactEmail] = useState('');
   const [city, setCity] = useState('');
@@ -14,6 +25,12 @@ export default function BarangayOnboarding({ accessToken, operatorName, onComple
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    const validation = validateBarangayOnboarding({ name, contactEmail });
+    if (validation) {
+      setError(validation.message);
+      showToast({ tone: 'error', ...validation });
+      return;
+    }
     setBusy(true);
     try {
       const saved = await registerBarangay(accessToken, {
@@ -27,7 +44,9 @@ export default function BarangayOnboarding({ accessToken, operatorName, onComple
       setResult(saved);
       onComplete?.(saved);
     } catch (err) {
-      setError(err.message ?? 'Could not register barangay.');
+      const msg = err.message ?? 'Could not register barangay.';
+      setError(msg);
+      showError(err, msg);
     } finally {
       setBusy(false);
     }
@@ -44,7 +63,7 @@ export default function BarangayOnboarding({ accessToken, operatorName, onComple
             clustering.
           </p>
           <div className="mt-6 rounded-xl bg-emerald-50 border border-emerald-200 p-4">
-            <p className="text-[10px] uppercase tracking-widest text-emerald-800 font-bold">
+            <p className="text-xs uppercase tracking-widest text-emerald-800 font-bold">
               Share this code with households
             </p>
             <p className="text-2xl font-mono font-bold text-emerald-900 mt-1">{result.barangay_code}</p>
@@ -70,7 +89,7 @@ export default function BarangayOnboarding({ accessToken, operatorName, onComple
       <div className="w-full max-w-lg rounded-2xl border border-sk-card-border/50 bg-white p-8 shadow-lg">
         <div className="flex flex-col items-center mb-6">
           <BrandLogo circleBg circleBgSize={90} />
-          <p className="text-[10px] uppercase tracking-widest text-sk-ink-muted mt-3">
+          <p className="text-xs uppercase tracking-widest text-sk-ink-muted mt-3">
             First-time setup
           </p>
           <h2 className="font-serif text-2xl font-semibold text-sk-ink text-center mt-1">
@@ -91,13 +110,14 @@ export default function BarangayOnboarding({ accessToken, operatorName, onComple
             onChange={setContactEmail}
             required
             placeholder="operator@barangay.gov.ph"
+            hint="Used for alerts and household contact. Must be a full email address."
           />
           <div className="grid grid-cols-2 gap-3">
             <Field label="City / municipality" value={city} onChange={setCity} placeholder="Davao City" />
             <Field label="Province" value={province} onChange={setProvince} placeholder="Davao del Sur" />
           </div>
           {error && (
-            <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-md px-3 py-2">
+            <p className="text-sm text-rose-800 bg-rose-50 border border-rose-200 rounded-md px-3 py-2">
               {error}
             </p>
           )}
@@ -114,10 +134,10 @@ export default function BarangayOnboarding({ accessToken, operatorName, onComple
   );
 }
 
-function Field({ label, value, onChange, type = 'text', required, placeholder }) {
+function Field({ label, value, onChange, type = 'text', required, placeholder, hint }) {
   return (
     <div className="space-y-1.5">
-      <label className="block text-[10px] font-bold uppercase tracking-widest text-sk-ink-muted">
+      <label className="block text-xs font-bold uppercase tracking-widest text-sk-ink-muted">
         {label}
       </label>
       <input
@@ -128,6 +148,7 @@ function Field({ label, value, onChange, type = 'text', required, placeholder })
         placeholder={placeholder}
         className="w-full h-10 rounded-md border border-sk-card-border/60 bg-white px-3 text-sm text-sk-ink focus:outline-none focus:ring-2 focus:ring-sk-run/30"
       />
+      {hint && <p className="text-xs text-sk-ink-muted">{hint}</p>}
     </div>
   );
 }

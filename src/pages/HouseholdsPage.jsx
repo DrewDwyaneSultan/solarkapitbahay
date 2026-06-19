@@ -1,7 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Card from '../components/ui/Card';
-import Toast from '../components/ui/Toast';
+import CopyButton from '../components/ui/CopyButton';
 import LiveStatusBadge from '../components/ui/LiveStatusBadge';
+import { useToast } from '../context/ToastContext';
+import { validateHouseholdForm } from '../utils/userMessages';
 import { BatteryActionChip } from '../components/clustering/BatteryActionIndicator';
 import { useClustering } from '../hooks/useClustering';
 import { useLiveData } from '../hooks/useLiveData';
@@ -35,7 +37,7 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
   const [selectedId, setSelectedId] = useState(null);
   const [selectedReg, setSelectedReg] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
-  const [toast, setToast] = useState(null);
+  const { showToast, showSuccess, showError } = useToast();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -57,6 +59,7 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
     status: 'active',
     clusterAction: 'auto',
   });
+  const editDirtyRef = useRef(false);
 
   const loadData = async () => {
     if (!accessToken) return;
@@ -68,19 +71,18 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
           : Promise.resolve([]),
         fetchRegistrations(accessToken, 'pending'),
       ]);
-      setRows(
-        hhRows.map((r) => ({
-          id: r.id,
-          headName: r.head_name,
-          address: r.address ?? r.purok ?? '—',
-          purok: r.purok ?? '',
-          hasSolar: r.has_solar,
-          hasBattery: r.has_battery,
-          status: r.status ?? 'active',
-          householdCode: r.household_code,
-          clusterAction: r.cluster_action ?? 'auto',
-        })),
-      );
+      const mapped = hhRows.map((r) => ({
+        id: r.id,
+        headName: r.head_name,
+        address: r.address ?? r.purok ?? '—',
+        purok: r.purok ?? '',
+        hasSolar: r.has_solar,
+        hasBattery: r.has_battery,
+        status: r.status ?? 'active',
+        householdCode: r.household_code,
+        clusterAction: r.cluster_action ?? 'auto',
+      }));
+      setRows(mapped);
       setRegs(
         (regData.registrations ?? []).map((r) => ({
           id: r.id,
@@ -126,7 +128,13 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
     return map;
   }, [liveData]);
 
-  const notify = (message, tone = 'success') => setToast({ message, tone });
+  const notify = (message, tone = 'success') => {
+    if (tone === 'error') {
+      showError({ message }, message);
+    } else {
+      showSuccess(message);
+    }
+  };
 
   const refreshAll = async () => {
     await loadData();
@@ -137,6 +145,7 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
     setSelectedId(row.id);
     setSelectedReg(null);
     setShowEditForm(true);
+    editDirtyRef.current = false;
     setEditForm({
       headName: row.headName,
       address: row.address === '—' ? '' : row.address,
@@ -150,7 +159,12 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
 
   const submitEditHousehold = async (e) => {
     e.preventDefault();
-    if (!accessToken || !selectedId || !editForm.headName.trim()) return;
+    if (!accessToken || !selectedId) return;
+    const validation = validateHouseholdForm({ headName: editForm.headName });
+    if (validation) {
+      showToast({ tone: 'error', ...validation });
+      return;
+    }
     setBusy(true);
     try {
       await updateHousehold(accessToken, selectedId, {
@@ -163,10 +177,11 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
         cluster_action: editForm.clusterAction,
       });
       setShowEditForm(false);
+      editDirtyRef.current = false;
       notify(`Updated ${editForm.headName.trim()}. Clustering refreshed.`);
       await refreshAll();
     } catch (err) {
-      notify(err.message ?? 'Could not update household.', 'error');
+      showError(err, 'Could not update household.');
     } finally {
       setBusy(false);
     }
@@ -188,7 +203,7 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
       notify(`Deleted ${row.id}.`, 'error');
       await refreshAll();
     } catch (err) {
-      notify(err.message ?? 'Could not delete household.', 'error');
+      showError(err, 'Could not delete household.');
     } finally {
       setBusy(false);
     }
@@ -207,7 +222,7 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
       );
       await refreshAll();
     } catch (err) {
-      notify(err.message ?? 'Reset failed.', 'error');
+      showError(err, 'Reset failed.');
     } finally {
       setBusy(false);
     }
@@ -222,7 +237,7 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
       notify(`Approved registration for ${reg.name}.`);
       await refreshAll();
     } catch (err) {
-      notify(err.message ?? 'Approve failed.', 'error');
+      showError(err, 'Approve failed.');
     } finally {
       setBusy(false);
     }
@@ -238,7 +253,7 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
       notify(`Rejected registration for ${reg.name}.`, 'error');
       await refreshAll();
     } catch (err) {
-      notify(err.message ?? 'Reject failed.', 'error');
+      showError(err, 'Reject failed.');
     } finally {
       setBusy(false);
     }
@@ -246,7 +261,12 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
 
   const submitAddHousehold = async (e) => {
     e.preventDefault();
-    if (!accessToken || !addForm.headName.trim()) return;
+    if (!accessToken) return;
+    const validation = validateHouseholdForm({ headName: addForm.headName });
+    if (validation) {
+      showToast({ tone: 'error', ...validation });
+      return;
+    }
     setBusy(true);
     try {
       const created = await createHousehold(accessToken, {
@@ -261,7 +281,7 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
       notify(`Added ${created.head_name ?? addForm.headName} (${created.id}). Clustering updated.`);
       await refreshAll();
     } catch (err) {
-      notify(err.message ?? 'Could not add household.', 'error');
+      showError(err, 'Could not add household.');
     } finally {
       setBusy(false);
     }
@@ -295,12 +315,15 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
 
   return (
     <>
-      {toast && <Toast message={toast.message} tone={toast.tone} onDone={() => setToast(null)} />}
-
       {barangayCode && (
-        <p className="text-xs text-sk-ink-muted mb-4">
-          Barangay code: <strong className="font-mono">{barangayCode}</strong> — share with households
-        </p>
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          <p className="text-xs text-sk-ink-muted">
+            Barangay code:{' '}
+            <strong className="font-mono text-sk-ink">{barangayCode}</strong>
+            <span className="text-sk-ink-muted"> — share with households</span>
+          </p>
+          <CopyButton text={barangayCode} label="Copy code" className="!h-8" />
+        </div>
       )}
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -512,7 +535,14 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
                     <td className="py-3 font-semibold">{r.id}</td>
                     <td className="py-3">{r.headName}</td>
                     <td className="py-3">{r.address}</td>
-                    <td className="py-3 text-xs font-mono">{r.householdCode ?? '—'}</td>
+                    <td className="py-3">
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs font-mono">{r.householdCode ?? '—'}</span>
+                        {r.householdCode && (
+                          <CopyButton text={r.householdCode} label="Copy" className="!h-7 !px-2 text-[10px]" />
+                        )}
+                      </div>
+                    </td>
                     <td className="py-3">
                       <YesNoChip yes={r.hasSolar} />
                     </td>
@@ -653,7 +683,10 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
                   <input
                     required
                     value={editForm.headName}
-                    onChange={(e) => setEditForm((f) => ({ ...f, headName: e.target.value }))}
+                    onChange={(e) => {
+                      editDirtyRef.current = true;
+                      setEditForm((f) => ({ ...f, headName: e.target.value }));
+                    }}
                     className="w-full h-10 rounded-md border border-sk-card-border/60 bg-white px-3 text-sm"
                   />
                 </div>
@@ -663,7 +696,10 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
                   </label>
                   <input
                     value={editForm.purok}
-                    onChange={(e) => setEditForm((f) => ({ ...f, purok: e.target.value }))}
+                    onChange={(e) => {
+                      editDirtyRef.current = true;
+                      setEditForm((f) => ({ ...f, purok: e.target.value }));
+                    }}
                     className="w-full h-10 rounded-md border border-sk-card-border/60 bg-white px-3 text-sm"
                   />
                 </div>
@@ -673,7 +709,10 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
                   </label>
                   <input
                     value={editForm.address}
-                    onChange={(e) => setEditForm((f) => ({ ...f, address: e.target.value }))}
+                    onChange={(e) => {
+                      editDirtyRef.current = true;
+                      setEditForm((f) => ({ ...f, address: e.target.value }));
+                    }}
                     className="w-full h-10 rounded-md border border-sk-card-border/60 bg-white px-3 text-sm"
                   />
                 </div>
@@ -681,7 +720,10 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
                   <input
                     type="checkbox"
                     checked={editForm.hasSolar}
-                    onChange={(e) => setEditForm((f) => ({ ...f, hasSolar: e.target.checked }))}
+                    onChange={(e) => {
+                      editDirtyRef.current = true;
+                      setEditForm((f) => ({ ...f, hasSolar: e.target.checked }));
+                    }}
                   />
                   Has solar
                 </label>
@@ -689,7 +731,10 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
                   <input
                     type="checkbox"
                     checked={editForm.hasBattery}
-                    onChange={(e) => setEditForm((f) => ({ ...f, hasBattery: e.target.checked }))}
+                    onChange={(e) => {
+                      editDirtyRef.current = true;
+                      setEditForm((f) => ({ ...f, hasBattery: e.target.checked }));
+                    }}
                   />
                   Has battery
                 </label>
@@ -699,7 +744,10 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
                   </label>
                   <select
                     value={editForm.clusterAction}
-                    onChange={(e) => setEditForm((f) => ({ ...f, clusterAction: e.target.value }))}
+                    onChange={(e) => {
+                      editDirtyRef.current = true;
+                      setEditForm((f) => ({ ...f, clusterAction: e.target.value }));
+                    }}
                     className="w-full h-10 rounded-md border border-sk-card-border/60 bg-white px-3 text-sm"
                   >
                     <option value="auto">Auto (K-means from mock energy data)</option>
@@ -717,7 +765,10 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
                   </label>
                   <select
                     value={editForm.status}
-                    onChange={(e) => setEditForm((f) => ({ ...f, status: e.target.value }))}
+                    onChange={(e) => {
+                      editDirtyRef.current = true;
+                      setEditForm((f) => ({ ...f, status: e.target.value }));
+                    }}
                     className="w-full h-10 rounded-md border border-sk-card-border/60 bg-white px-3 text-sm"
                   >
                     <option value="active">Active</option>
@@ -736,7 +787,10 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
                   <button
                     type="button"
                     disabled={busy}
-                    onClick={() => setShowEditForm(false)}
+                    onClick={() => {
+                      editDirtyRef.current = false;
+                      setShowEditForm(false);
+                    }}
                     className="h-10 px-4 rounded-lg border border-sk-card-border/60 bg-white text-sm font-semibold"
                   >
                     Cancel
@@ -748,7 +802,7 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
                 <DetailRow label="HH ID" value={selected.id} />
                 <DetailRow label="Head" value={selected.headName} />
                 <DetailRow label="Address" value={selected.address} />
-                <DetailRow label="Household code" value={selected.householdCode ?? '—'} />
+                <DetailRow label="Household code" value={selected.householdCode ?? '—'} copyValue={selected.householdCode} />
                 <DetailRow label="Solar" value={selected.hasSolar ? 'Yes' : 'No'} />
                 <DetailRow label="Battery" value={selected.hasBattery ? 'Yes' : 'No'} />
                 <DetailRow label="Status" value={selected.status} />
@@ -818,11 +872,14 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
   );
 }
 
-function DetailRow({ label, value }) {
+function DetailRow({ label, value, copyValue }) {
   return (
-    <div className="flex justify-between gap-3 rounded-lg bg-white/50 px-3 py-2 border border-sk-card-border/20">
-      <dt className="text-[10px] font-bold uppercase tracking-widest text-sk-ink-muted">{label}</dt>
-      <dd className="font-semibold text-right capitalize">{value}</dd>
+    <div className="flex justify-between items-center gap-3 rounded-lg bg-white/50 px-3 py-2 border border-sk-card-border/20">
+      <dt className="text-xs font-bold uppercase tracking-widest text-sk-ink-muted">{label}</dt>
+      <dd className="flex items-center gap-2 font-semibold text-right capitalize">
+        <span>{value}</span>
+        {copyValue && <CopyButton text={copyValue} label="Copy" className="!h-7 !px-2 text-[10px]" />}
+      </dd>
     </div>
   );
 }

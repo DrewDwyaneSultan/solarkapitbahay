@@ -63,29 +63,31 @@ def battery_dispatch(
     battery_soc: float,
     hour: int,
     battery_capacity_kwh: float,
+    min_soc: float = BATTERY_MIN_SOC,
+    max_soc: float = BATTERY_MAX_SOC,
 ) -> tuple[float, float, float]:
     """Returns (grid_draw_kwh, new_soc, discharge_kwh)."""
     price = grid_price(hour)
     is_peak = price >= GRID_PRICE_PEAK
 
     discharge = 0.0
-    if remaining_need > 0 and battery_soc > BATTERY_MIN_SOC:
-        avail = (battery_soc - BATTERY_MIN_SOC) * battery_capacity_kwh
+    if remaining_need > 0 and battery_soc > min_soc:
+        avail = (battery_soc - min_soc) * battery_capacity_kwh
         discharge = min(remaining_need, avail, BATTERY_MAX_POWER_KW)
         if not is_peak:
             discharge *= 0.5
         remaining_need -= discharge
 
     charge = 0.0
-    if remaining_surplus > 0 and battery_soc < BATTERY_MAX_SOC:
-        avail = (BATTERY_MAX_SOC - battery_soc) * battery_capacity_kwh
+    if remaining_surplus > 0 and battery_soc < max_soc:
+        avail = (max_soc - battery_soc) * battery_capacity_kwh
         charge = min(remaining_surplus, avail, BATTERY_MAX_POWER_KW)
         if not (11 <= hour <= 14):
             charge *= 0.7
         remaining_surplus -= charge
 
     net = (charge * BATTERY_EFFICIENCY - discharge / BATTERY_EFFICIENCY) / battery_capacity_kwh
-    new_soc = max(BATTERY_MIN_SOC, min(BATTERY_MAX_SOC, battery_soc + net))
+    new_soc = max(min_soc, min(max_soc, battery_soc + net))
     return max(0.0, remaining_need), new_soc, discharge
 
 
@@ -95,12 +97,14 @@ def allocate_hour_greedy(
     battery_soc: float,
     hour: int,
     battery_capacity_kwh: float,
+    min_soc: float = BATTERY_MIN_SOC,
+    max_soc: float = BATTERY_MAX_SOC,
 ) -> dict:
     rec, _giv, rs, rd = p2p_greedy(surplus, need)
     rem_need = sum(rd)
     rem_sur = sum(rs)
     grid_draw, new_soc, discharge = battery_dispatch(
-        rem_need, rem_sur, battery_soc, hour, battery_capacity_kwh
+        rem_need, rem_sur, battery_soc, hour, battery_capacity_kwh, min_soc, max_soc
     )
 
     price = grid_price(hour)
@@ -125,7 +129,11 @@ def simulate_greedy(
     battery_capacity_kwh: float,
     days: int = 30,
     seed: int = 42,
+    min_soc_pct: float = 20.0,
+    max_soc_pct: float = 95.0,
 ) -> dict:
+    min_soc = max(0.05, min(0.5, min_soc_pct / 100.0))
+    max_soc = max(min_soc + 0.05, min(1.0, max_soc_pct / 100.0))
     loads, _ = generate_load_profiles(num_households, seed)
     battery_soc = 0.50
     received_total = [0.0] * num_households
@@ -153,7 +161,9 @@ def simulate_greedy(
                 need.append(max(0.0, load - gen))
                 baseline_grid += max(0.0, load - gen) * price
 
-            out = allocate_hour_greedy(surplus, need, battery_soc, hour, battery_capacity_kwh)
+            out = allocate_hour_greedy(
+                surplus, need, battery_soc, hour, battery_capacity_kwh, min_soc, max_soc
+            )
             battery_soc = out["battery_soc"]
             total_savings += out["savings"]
             total_shared += out["shared_kwh"]

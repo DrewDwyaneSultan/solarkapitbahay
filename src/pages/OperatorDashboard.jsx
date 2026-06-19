@@ -9,6 +9,7 @@ import SettingsPage from './SettingsPage';
 import SimulationPage from './SimulationPage';
 import { LiveDataProvider, useLiveData } from '../hooks/useLiveData';
 import { useLiveAlerts } from '../hooks/useLiveAlerts';
+import { ToastProvider } from '../context/ToastContext';
 
 const pageComponents = {
   dashboard: DashboardPage,
@@ -38,7 +39,8 @@ export default function OperatorDashboard({
 }) {
   return (
     <LiveDataProvider>
-      <OperatorDashboardInner
+      <ToastProvider>
+        <OperatorDashboardInner
         operator={operator}
         barangayName={barangayName}
         barangayCode={barangayCode}
@@ -46,6 +48,7 @@ export default function OperatorDashboard({
         onLogout={onLogout}
         onBarangayUpdated={onBarangayUpdated}
       />
+      </ToastProvider>
     </LiveDataProvider>
   );
 }
@@ -84,6 +87,7 @@ function OperatorDashboardInner({
           accessToken={accessToken}
           barangayName={barangayName}
           barangayCode={barangayCode}
+          operatorEmail={operator?.email ?? ''}
           onBarangayUpdated={onBarangayUpdated}
         />
       ) : activePage === 'alerts' ? (

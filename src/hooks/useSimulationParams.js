@@ -8,6 +8,8 @@ export function useSimulationParams() {
   const [batteryCapacity, setBatteryCapacity] = useState(
     simulationDefaults.batteryCapacity.value,
   );
+  const [minSoc, setMinSoc] = useState(simulationDefaults.minSoc.value);
+  const [maxSoc, setMaxSoc] = useState(simulationDefaults.maxSoc.value);
   const [algorithm, setAlgorithm] = useState('greedy');
   const [isRunning, setIsRunning] = useState(false);
   const [lastRunAt, setLastRunAt] = useState(null);
@@ -23,19 +25,25 @@ export function useSimulationParams() {
           households,
           batteryCapacity,
           simulationDays,
+          minSocPct: minSoc,
+          maxSocPct: maxSoc,
           algorithm,
         });
         setResults(data);
         setLastRunAt(new Date());
         persistSimulationResults(data);
       } catch (err) {
-        setError(err.message ?? 'Simulation failed. Is the backend running?');
+        setError({
+          title: err.title,
+          message: err.message ?? 'Simulation failed. Is the backend running?',
+          hint: err.hint,
+        });
         setResults(null);
       } finally {
         setIsRunning(false);
       }
     },
-    [households, batteryCapacity, algorithm],
+    [households, batteryCapacity, minSoc, maxSoc, algorithm],
   );
 
   return {
@@ -43,6 +51,10 @@ export function useSimulationParams() {
     setHouseholds,
     batteryCapacity,
     setBatteryCapacity,
+    minSoc,
+    setMinSoc,
+    maxSoc,
+    setMaxSoc,
     algorithm,
     setAlgorithm,
     isRunning,
@@ -50,6 +62,6 @@ export function useSimulationParams() {
     results,
     error,
     runSimulation,
-    params: { households, batteryCapacity, algorithm },
+    params: { households, batteryCapacity, minSoc, maxSoc, algorithm },
   };
 }

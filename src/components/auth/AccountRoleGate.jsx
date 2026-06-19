@@ -4,7 +4,17 @@ import { switchToOperator } from '../../services/authApi';
 import { clearIntendedRole, persistIntendedRole } from '../../utils/intendedRole';
 import { getProfileRoles, profileHasRole } from '../../hooks/useAuth';
 
-export default function AccountRoleGate({
+import { ToastProvider, useToast } from '../../context/ToastContext';
+
+export default function AccountRoleGate(props) {
+  return (
+    <ToastProvider>
+      <AccountRoleGateInner {...props} />
+    </ToastProvider>
+  );
+}
+
+function AccountRoleGateInner({
   profile,
   intendedRole,
   accessToken,
@@ -12,6 +22,7 @@ export default function AccountRoleGate({
   onAddHousehold,
   onLogout,
 }) {
+  const { showError } = useToast();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -31,7 +42,9 @@ export default function AccountRoleGate({
       persistIntendedRole('operator');
       onResolved?.(updated, 'operator');
     } catch (err) {
-      setError(err.message ?? 'Could not add operator access.');
+      const msg = err.message ?? 'Could not add operator access.';
+      setError(msg);
+      showError(err, msg);
     } finally {
       setBusy(false);
     }

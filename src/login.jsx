@@ -11,6 +11,8 @@ import {
   consumeIntendedRoleFromUrl,
   readIntendedRole,
 } from './utils/intendedRole';
+import { ToastProvider, useToast } from './context/ToastContext';
+import { friendlyError } from './utils/userMessages';
 
 const demoAccounts = {
   'operator@solarkapitbahay.com': {
@@ -34,7 +36,15 @@ const demoAccounts = {
   },
 };
 
-export default function Login({
+export default function Login(props) {
+  return (
+    <ToastProvider>
+      <LoginPage {...props} />
+    </ToastProvider>
+  );
+}
+
+function LoginPage({
   onSignIn,
   onProfileComplete,
   onIntendedRoleChange,
@@ -45,6 +55,7 @@ export default function Login({
   defaultRole = 'operator',
   forceHousehold = false,
 }) {
+  const { showToast, showError } = useToast();
   const [role, setRole] = useState(() => {
     if (forceHousehold) return 'household';
     const stored = readIntendedRole();
@@ -166,6 +177,12 @@ export default function Login({
     setInfo('');
   };
 
+  const showFormError = (payload) => {
+    const friendly = typeof payload === 'string' ? friendlyError(payload) : payload;
+    setError(friendly.message);
+    showToast({ tone: 'error', ...friendly });
+  };
+
   const handleGoogleSignIn = async () => {
     if (!supabase) return;
     resetMessages();
@@ -227,23 +244,47 @@ export default function Login({
     e.preventDefault();
     const token = session?.access_token;
     if (!token) {
-      setError('Session expired. Please sign in again.');
+      showFormError({
+        title: 'Session expired',
+        message: 'Please sign in again before completing your profile.',
+        hint: 'Use the Sign in tab, then finish the profile steps.',
+      });
       return;
     }
     const profileRole = forceHousehold ? 'household' : role;
     if (profileRole === 'household') {
       if (!barangayCode.trim()) {
-        setError('Enter the barangay code from your operator.');
+        showFormError({
+          title: 'Barangay code required',
+          message: 'Enter the barangay code your operator shared with you.',
+          hint: 'Example format: SK-MABINI-DEMO — spelling and dashes must match exactly.',
+        });
         return;
       }
       if (!barangayInfo) {
-        setError('Barangay code not found. Check with your operator.');
+        showFormError({
+          title: 'Barangay code not found',
+          message: 'We could not find a barangay with that code.',
+          hint: 'Double-check the code with your barangay operator or try copying it again.',
+        });
         return;
       }
       if (joinMode === 'existing' && !householdId && !householdCode.trim()) {
-        setError('Select a home or enter the household code from your operator.');
+        showFormError({
+          title: 'Household required',
+          message: 'Select your home from the list or enter your household code.',
+          hint: 'Your operator assigns each home a unique household code.',
+        });
         return;
       }
+    }
+    if (!displayName.trim() || displayName.trim().length < 2) {
+      showFormError({
+        title: 'Name is too short',
+        message: 'Enter your full name (at least 2 characters).',
+        hint: 'Use the name you want shown on your dashboard.',
+      });
+      return;
     }
     resetMessages();
     setBusy(true);
@@ -269,6 +310,7 @@ export default function Login({
       }
       onSignIn?.({ user: profileToUser(saved) });
     } catch (err) {
+      showError(err, 'Could not save profile.');
       setError(err.message ?? 'Could not save profile.');
     } finally {
       setBusy(false);

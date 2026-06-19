@@ -1,3 +1,5 @@
+import { parseApiError } from './apiErrors';
+
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
 const API_TIMEOUT_MS = 25000;
 const AUTH_ME_RETRIES = 2;
@@ -41,19 +43,7 @@ export async function fetchMe(accessToken) {
         throw err;
       }
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        const raw = body.detail;
-        const detail =
-          typeof raw === 'string'
-            ? raw
-            : Array.isArray(raw)
-              ? raw.map((d) => d?.msg ?? JSON.stringify(d)).join('; ')
-              : raw
-                ? String(raw)
-                : null;
-        const err = new Error(detail ?? `Auth failed (${res.status})`);
-        err.status = res.status;
-        throw err;
+        throw await parseApiError(res);
       }
       return res.json();
     } catch (err) {
@@ -82,10 +72,7 @@ export async function saveProfile(accessToken, profile) {
     headers: authHeaders(accessToken),
     body: JSON.stringify(profile),
   });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail ?? `Save profile failed (${res.status})`);
-  }
+  if (!res.ok) throw await parseApiError(res);
   return res.json();
 }
 
@@ -94,10 +81,7 @@ export async function switchToOperator(accessToken) {
     method: 'POST',
     headers: authHeaders(accessToken),
   });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail ?? 'Could not add operator access.');
-  }
+  if (!res.ok) throw await parseApiError(res);
   return res.json();
 }
 
@@ -107,10 +91,7 @@ export async function switchActiveRole(accessToken, role) {
     headers: authHeaders(accessToken),
     body: JSON.stringify({ role }),
   });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail ?? 'Could not switch role.');
-  }
+  if (!res.ok) throw await parseApiError(res);
   return res.json();
 }
 

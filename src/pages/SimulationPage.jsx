@@ -1,11 +1,14 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { householdComparison as fallbackComparison } from '../constants/mockSimulation';
 import { simulationDefaults } from '../constants/theme';
 import Card from '../components/ui/Card';
 import RangeSliderWithInput from '../components/ui/RangeSliderWithInput';
 import StatTile from '../components/ui/StatTile';
+import GlossaryTerm from '../components/ui/GlossaryTerm';
 import SimpleLineChart from '../components/charts/SimpleLineChart';
 import { useSimulationParams } from '../hooks/useSimulationParams';
+import { useToast } from '../context/ToastContext';
+import { validateSimulationForm } from '../utils/userMessages';
 
 function formatCurrency(value) {
   return `₱${Number(value).toLocaleString('en-PH', { maximumFractionDigits: 0 })}`;
@@ -19,15 +22,19 @@ function ConfigSummaryPill({ children }) {
   );
 }
 
-function FormField({ id, label, children, hint }) {
+function AffectsRunBadge() {
   return (
-    <div className="space-y-1.5">
-      <label htmlFor={id} className="block text-[11px] font-bold uppercase tracking-wider text-sk-ink-muted">
-        {label}
-      </label>
-      {children}
-      {hint && <p className="text-[11px] text-sk-ink-muted leading-snug">{hint}</p>}
-    </div>
+    <span className="ml-1.5 inline-flex rounded-full bg-emerald-100 border border-emerald-200 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-900">
+      Affects run
+    </span>
+  );
+}
+
+function ReferenceOnlyBadge() {
+  return (
+    <span className="ml-1.5 inline-flex rounded-full bg-stone-100 border border-stone-200 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-stone-700">
+      Reference
+    </span>
   );
 }
 
@@ -40,16 +47,22 @@ export default function SimulationPage() {
     setHouseholds,
     batteryCapacity,
     setBatteryCapacity,
+    minSoc,
+    setMinSoc,
+    maxSoc,
+    setMaxSoc,
     isRunning,
     results,
     error,
     runSimulation,
   } = useSimulationParams();
+  const { showToast, showError } = useToast();
 
-  const [minSoc, setMinSoc] = useState(simulationDefaults.minSoc.value);
-  const [maxSoc, setMaxSoc] = useState(simulationDefaults.maxSoc.value);
-  const [peakTariff, setPeakTariff] = useState(String(simulationDefaults.peakTariff));
   const [duration, setDuration] = useState(String(simulationDefaults.durationDays));
+
+  useEffect(() => {
+    if (error) showError(error);
+  }, [error, showError]);
 
   const savingsWeek = [4200, 5100, 6800, 7200, 8100, 7900, 9300];
 
@@ -57,8 +70,8 @@ export default function SimulationPage() {
     ? [
         { id: 'savings', label: 'Total Savings', value: formatCurrency(results.total_savings_php), bgKey: 'savings', icon: '💰' },
         { id: 'grid', label: 'Grid Reduction', value: `${results.grid_reduction_pct}%`, bgKey: 'grid', icon: '⚡' },
-        { id: 'gini', label: 'Fairness (Gini)', value: String(results.gini_coefficient), bgKey: 'battery', icon: '⚖️' },
-        { id: 'time', label: 'Compute Time', value: `${results.execution_ms}ms`, bgKey: 'solar', icon: '⏱️' },
+        { id: 'gini', label: 'Fairness (Gini)', value: String(results.gini_coefficient), bgKey: 'battery', icon: '⚖️', glossaryId: 'gini' },
+        { id: 'time', label: 'Compute Time', value: `${results.execution_ms}ms`, bgKey: 'solar', icon: '⏱️', glossaryId: 'computeTime' },
       ]
     : null;
 
@@ -72,7 +85,20 @@ export default function SimulationPage() {
       : '—';
   const hardwareCost = results?.hardware_cost_php ?? 1500;
 
-  const handleRun = () => runSimulation(Number(duration));
+  const handleRun = () => {
+    const validation = validateSimulationForm({
+      households,
+      batteryCapacity,
+      minSoc,
+      maxSoc,
+      duration,
+    });
+    if (validation) {
+      showToast({ tone: 'error', ...validation });
+      return;
+    }
+    runSimulation(Number(duration));
+  };
 
   return (
     <div className="space-y-6">
@@ -80,10 +106,12 @@ export default function SimulationPage() {
         <div className="max-w-2xl">
           <h2 className="font-serif text-2xl font-semibold text-sk-ink">Simulation Planner</h2>
           <p className="text-sm text-sk-ink-muted mt-1.5 leading-relaxed">
-            Configure parameters and run the Greedy energy-sharing algorithm (Colab/TOPSIS winner).
+            Configure parameters and run the <GlossaryTerm id="greedy">Greedy</GlossaryTerm> energy-sharing algorithm
+            (Colab/TOPSIS winner). Sliders marked <strong className="text-emerald-800">Affects run</strong> are sent
+            to the backend; tariff rates are fixed to Davao Light TOU.
           </p>
         </div>
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 border border-emerald-300 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-900 shrink-0">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 border border-emerald-300 px-3 py-1 text-xs font-bold uppercase tracking-wider text-emerald-900 shrink-0">
           <span aria-hidden>⚡</span>
           Greedy Algorithm
         </span>
@@ -93,82 +121,93 @@ export default function SimulationPage() {
         <aside className="space-y-4 xl:sticky xl:top-4">
           <Card title="Community Settings">
             <div className="space-y-3">
-              <RangeSliderWithInput
-                id="households"
-                label="Households"
-                min={simulationDefaults.households.min}
-                max={simulationDefaults.households.max}
-                value={households}
-                onChange={setHouseholds}
-              />
-              <RangeSliderWithInput
-                id="battery-capacity"
-                label="Battery Capacity"
-                min={simulationDefaults.batteryCapacity.min}
-                max={simulationDefaults.batteryCapacity.max}
-                value={batteryCapacity}
-                onChange={setBatteryCapacity}
-                unit="kWh"
-              />
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-sk-ink-muted mb-2">
+                  Households <AffectsRunBadge />
+                </p>
+                <RangeSliderWithInput
+                  id="households"
+                  label=""
+                  min={simulationDefaults.households.min}
+                  max={simulationDefaults.households.max}
+                  value={households}
+                  onChange={setHouseholds}
+                />
+              </div>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-sk-ink-muted mb-2">
+                  Battery Capacity <AffectsRunBadge />
+                </p>
+                <RangeSliderWithInput
+                  id="battery-capacity"
+                  label=""
+                  min={simulationDefaults.batteryCapacity.min}
+                  max={simulationDefaults.batteryCapacity.max}
+                  value={batteryCapacity}
+                  onChange={setBatteryCapacity}
+                  unit="kWh"
+                />
+              </div>
             </div>
           </Card>
 
           <Card title="Battery & Tariff Settings">
             <div className="space-y-3">
-              <RangeSliderWithInput
-                id="min-soc"
-                label="Min SOC"
-                min={simulationDefaults.minSoc.min}
-                max={simulationDefaults.minSoc.max}
-                value={minSoc}
-                onChange={setMinSoc}
-                unit="%"
-              />
-              <RangeSliderWithInput
-                id="max-soc"
-                label="Max SOC"
-                min={simulationDefaults.maxSoc.min}
-                max={simulationDefaults.maxSoc.max}
-                value={maxSoc}
-                onChange={setMaxSoc}
-                unit="%"
-              />
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-sk-ink-muted mb-2">
+                  Min <GlossaryTerm id="soc">SOC</GlossaryTerm> <AffectsRunBadge />
+                </p>
+                <RangeSliderWithInput
+                  id="min-soc"
+                  label=""
+                  min={simulationDefaults.minSoc.min}
+                  max={simulationDefaults.minSoc.max}
+                  value={minSoc}
+                  onChange={setMinSoc}
+                  unit="%"
+                />
+              </div>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-sk-ink-muted mb-2">
+                  Max <GlossaryTerm id="soc">SOC</GlossaryTerm> <AffectsRunBadge />
+                </p>
+                <RangeSliderWithInput
+                  id="max-soc"
+                  label=""
+                  min={simulationDefaults.maxSoc.min}
+                  max={simulationDefaults.maxSoc.max}
+                  value={maxSoc}
+                  onChange={setMaxSoc}
+                  unit="%"
+                />
+              </div>
             </div>
 
-            <div className="mt-4 pt-4 border-t border-sk-card-border/40 grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <FormField
-                id="peak-tariff"
-                label="Peak Tariff (₱/kWh)"
-                hint="Display only — backend uses Davao Light TOU rates."
+            <div className="mt-4 pt-4 border-t border-sk-card-border/40">
+              <label htmlFor="duration" className="block text-xs font-bold uppercase tracking-wider text-sk-ink-muted mb-1.5">
+                Duration <AffectsRunBadge />
+              </label>
+              <select
+                id="duration"
+                value={duration}
+                onChange={(e) => setDuration(e.target.value)}
+                className={fieldClass}
               >
-                <input
-                  id="peak-tariff"
-                  type="number"
-                  step="0.01"
-                  value={peakTariff}
-                  onChange={(e) => setPeakTariff(e.target.value)}
-                  className={fieldClass}
-                />
-              </FormField>
-              <FormField id="duration" label="Duration">
-                <select
-                  id="duration"
-                  value={duration}
-                  onChange={(e) => setDuration(e.target.value)}
-                  className={fieldClass}
-                >
-                  <option value="7">7 Days</option>
-                  <option value="30">30 Days</option>
-                  <option value="90">90 Days</option>
-                </select>
-              </FormField>
+                <option value="7">7 Days</option>
+                <option value="30">30 Days</option>
+                <option value="90">90 Days</option>
+              </select>
             </div>
 
             <div className="mt-4 rounded-lg bg-sk-placeholder/40 border border-sk-card-border/30 px-3 py-2.5">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-sk-ink-muted mb-1.5">
-                Davao Light TOU (backend)
+              <p className="text-xs font-bold uppercase tracking-wider text-sk-ink-muted mb-1.5">
+                Davao Light TOU (backend) <ReferenceOnlyBadge />
               </p>
-              <div className="flex flex-wrap gap-1.5 text-[11px] text-sk-ink">
+              <p className="text-xs text-sk-ink-muted mb-2 leading-relaxed">
+                Peak tariff and off-peak rates are fixed in the simulation engine — adjusting them here does not change
+                results.
+              </p>
+              <div className="flex flex-wrap gap-1.5 text-xs text-sk-ink">
                 <span className="rounded-md bg-rose-50 border border-rose-200/80 px-2 py-0.5">Peak 6–9 PM · ₱12.70</span>
                 <span className="rounded-md bg-amber-50 border border-amber-200/80 px-2 py-0.5">Mid · ₱10.58</span>
                 <span className="rounded-md bg-sky-50 border border-sky-200/80 px-2 py-0.5">Off 10 PM–5 AM · ₱8.99</span>
@@ -178,7 +217,8 @@ export default function SimulationPage() {
 
           {error && (
             <p className="text-sm text-rose-800 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
-              {error}
+              <strong>{error.title ?? 'Simulation error'}:</strong> {error.message ?? error}
+              {error.hint && <span className="block mt-1 text-xs">{error.hint}</span>}
             </p>
           )}
 
@@ -211,6 +251,7 @@ export default function SimulationPage() {
               <div className="flex flex-wrap justify-center gap-2 mt-6">
                 <ConfigSummaryPill>{households} households</ConfigSummaryPill>
                 <ConfigSummaryPill>{batteryCapacity} kWh battery</ConfigSummaryPill>
+                <ConfigSummaryPill>SOC {minSoc}–{maxSoc}%</ConfigSummaryPill>
                 <ConfigSummaryPill>{duration} days</ConfigSummaryPill>
               </div>
 
@@ -234,7 +275,14 @@ export default function SimulationPage() {
             <>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 {stats.map((stat) => (
-                  <StatTile key={stat.id} label={stat.label} value={stat.value} bgKey={stat.bgKey} icon={stat.icon} />
+                  <StatTile
+                    key={stat.id}
+                    label={stat.label}
+                    value={stat.value}
+                    bgKey={stat.bgKey}
+                    icon={stat.icon}
+                    glossaryId={stat.glossaryId}
+                  />
                 ))}
               </div>
 
@@ -253,8 +301,8 @@ export default function SimulationPage() {
                 <div className="rounded-xl bg-emerald-50/80 border border-emerald-200 p-4 text-sm text-sk-ink">
                   <p className="font-semibold text-emerald-900 mb-1">Greedy algorithm result</p>
                   <p className="leading-relaxed">
-                    Your {households}-household community with a {batteryCapacity} kWh battery can save{' '}
-                    {formatCurrency(results.total_savings_php)} over {duration} days (~
+                    Your {households}-household community with a {batteryCapacity} kWh battery (SOC {minSoc}–{maxSoc}%)
+                    can save {formatCurrency(results.total_savings_php)} over {duration} days (~
                     {formatCurrency(results.monthly_savings_php ?? monthlySavings)}/month).
                   </p>
                   <p className="text-xs text-sk-ink-muted mt-2">
@@ -267,7 +315,7 @@ export default function SimulationPage() {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <Card title="Projected Daily Savings">
                   <SimpleLineChart data={savingsWeek} height={140} />
-                  <div className="flex justify-between text-[10px] text-sk-ink-muted mt-2 px-1">
+                  <div className="flex justify-between text-xs text-sk-ink-muted mt-2 px-1">
                     {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
                       <span key={d}>{d}</span>
                     ))}
