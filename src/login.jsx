@@ -290,28 +290,26 @@ export default function Login({
                 <span className="italic font-semibold">profile.</span>
               </h3>
               <form className="space-y-4" onSubmit={handleCompleteProfile}>
-                {!needsProfile && (
-                  <div className="flex bg-white/70 p-1 rounded-lg border border-sk-card-border/50 mb-2">
-                    <button
-                      type="button"
-                      onClick={() => setRole('operator')}
-                      className={`flex-1 py-1 text-[10px] uppercase tracking-widest font-bold rounded-md ${
-                        role === 'operator' ? 'bg-white text-sk-ink shadow-sm' : 'text-sk-ink-muted'
-                      }`}
-                    >
-                      Operator
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setRole('household')}
-                      className={`flex-1 py-1 text-[10px] uppercase tracking-widest font-bold rounded-md ${
-                        role === 'household' ? 'bg-white text-sk-ink shadow-sm' : 'text-sk-ink-muted'
-                      }`}
-                    >
-                      Household
-                    </button>
-                  </div>
-                )}
+                <div className="flex bg-white/70 p-1 rounded-lg border border-sk-card-border/50 mb-2">
+                  <button
+                    type="button"
+                    onClick={() => setRole('operator')}
+                    className={`flex-1 py-1 text-[10px] uppercase tracking-widest font-bold rounded-md ${
+                      role === 'operator' ? 'bg-white text-sk-ink shadow-sm' : 'text-sk-ink-muted'
+                    }`}
+                  >
+                    Operator
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRole('household')}
+                    className={`flex-1 py-1 text-[10px] uppercase tracking-widest font-bold rounded-md ${
+                      role === 'household' ? 'bg-white text-sk-ink shadow-sm' : 'text-sk-ink-muted'
+                    }`}
+                  >
+                    Household
+                  </button>
+                </div>
                 <Field label="Display name" value={displayName} onChange={setDisplayName} required />
                 {role === 'household' && (
                   <>

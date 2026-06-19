@@ -875,6 +875,20 @@ def get_user_profile(auth_user_id: str) -> dict | None:
         if bg:
             profile["barangay_name"] = bg.get("name")
             profile["barangay_code"] = bg.get("barangay_code")
+    if profile.get("status") == "rejected":
+        with db_connection() as conn:
+            reg = fetchone(
+                conn,
+                """
+                SELECT rejection_reason FROM household_registrations
+                WHERE applicant_user_id = ? AND status = 'rejected'
+                ORDER BY reviewed_at DESC, id DESC
+                LIMIT 1
+                """,
+                (auth_user_id,),
+            )
+        if reg and reg.get("rejection_reason"):
+            profile["rejection_reason"] = reg["rejection_reason"]
     return profile
 
 
@@ -912,10 +926,16 @@ def upsert_user_profile(
         if resolved_barangay_id and int(hh["barangay_id"]) != resolved_barangay_id:
             raise ValueError("Household code does not belong to this barangay")
         resolved_household_id = hh["id"]
+
+    if resolved_household_id and role == "household":
+        hh = get_household(resolved_household_id)
+        if not hh:
+            raise ValueError(f"Household {resolved_household_id} not found")
+        if resolved_barangay_id and int(hh["barangay_id"]) != resolved_barangay_id:
+            raise ValueError("Household does not belong to this barangay")
         if not hh.get("claimable"):
             raise ValueError("This household is already claimed or not available")
-
-    if resolved_household_id and not get_household(resolved_household_id):
+    elif resolved_household_id and not get_household(resolved_household_id):
         raise ValueError(f"Household {resolved_household_id} not found")
 
     if role == "operator":

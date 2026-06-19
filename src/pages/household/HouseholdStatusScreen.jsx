@@ -1,7 +1,13 @@
 import React from 'react';
 import BrandLogo from '../../components/BrandLogo';
 
-export default function HouseholdStatusScreen({ status, displayName, barangayName, onLogout }) {
+export default function HouseholdStatusScreen({
+  status,
+  displayName,
+  barangayName,
+  rejectionReason,
+  onLogout,
+}) {
   const isRejected = status === 'rejected';
 
   return (
@@ -20,6 +26,12 @@ export default function HouseholdStatusScreen({ status, displayName, barangayNam
         {!isRejected && (
           <p className="text-xs text-sk-ink-muted mt-4">
             You will receive an email when approved. You can sign out and check back later.
+          </p>
+        )}
+        {isRejected && rejectionReason && (
+          <p className="text-xs text-rose-800 bg-rose-50 border border-rose-200 rounded-md px-3 py-2 mt-4 text-left">
+            <span className="font-semibold">Reason: </span>
+            {rejectionReason}
           </p>
         )}
         {isRejected && (

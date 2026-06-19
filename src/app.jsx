@@ -46,12 +46,16 @@ function App() {
   useEffect(() => {
     if (auth.loading) return;
     if (auth.user?.role === 'operator' && auth.supabaseEnabled && auth.session) {
+      if (operatorBarangay || auth.profile?.barangay_id) {
+        setBarangayCheckDone(true);
+        return;
+      }
       setBarangayCheckDone(false);
       refreshOperatorBarangay();
     } else {
       setBarangayCheckDone(true);
     }
-  }, [auth.loading, auth.user?.role, auth.supabaseEnabled, auth.session, refreshOperatorBarangay]);
+  }, [auth.loading, auth.user?.role, auth.supabaseEnabled, auth.session, auth.profile?.barangay_id, operatorBarangay, refreshOperatorBarangay]);
 
   if (auth.loading) {
     return <LoadingScreen />;
@@ -125,6 +129,7 @@ function App() {
           status={activeUser.status}
           displayName={activeUser.name}
           barangayName={activeUser.barangayName}
+          rejectionReason={activeUser.rejectionReason}
           onLogout={handleLogout}
         />
       );

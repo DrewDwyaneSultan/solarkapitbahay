@@ -8,10 +8,10 @@ import { useLiveData } from '../hooks/useLiveData';
 import { CIRCUIT_HOUSES, resolveCircuit } from '../constants/circuits';
 import {
   approveRegistration,
+  fetchHouseholdsByBarangay,
   fetchRegistrations,
   rejectRegistration,
 } from '../services/registrationApi';
-import { fetchHouseholdOptions } from '../services/authApi';
 
 export default function HouseholdsPage({ accessToken, barangayCode }) {
   const { data: clusterData } = useClustering();
@@ -41,8 +41,8 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
     try {
       const [hhRows, regData] = await Promise.all([
         barangayCode
-          ? fetchHouseholdOptions(barangayCode).catch(() => [])
-          : fetchHouseholdOptions().catch(() => []),
+          ? fetchHouseholdsByBarangay(barangayCode, { claimableOnly: false })
+          : Promise.resolve([]),
         fetchRegistrations(accessToken, 'pending'),
       ]);
       setRows(

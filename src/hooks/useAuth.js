@@ -23,6 +23,7 @@ export function profileToUser(profile) {
       status: profile.status,
       barangayName: profile.barangay_name,
       barangayCode: profile.barangay_code,
+      rejectionReason: profile.rejection_reason ?? null,
     };
   }
 
@@ -84,9 +85,14 @@ export function useAuth() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
       setSession(nextSession);
       if (nextSession?.access_token) {
+        // Tab focus triggers TOKEN_REFRESHED — refresh profile without full-screen loading.
+        if (event === 'TOKEN_REFRESHED') {
+          refreshProfile(nextSession.access_token);
+          return;
+        }
         setLoading(true);
         refreshProfile(nextSession.access_token).finally(() => setLoading(false));
       } else {
