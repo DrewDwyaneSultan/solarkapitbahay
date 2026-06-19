@@ -4,11 +4,11 @@ import { fetchLiveTelemetry } from '../services/liveApi';
 
 const mockFallback = {
   houseA: {
-    solar: 180,
-    load: 80,
+    solar: 0,
+    load: 0,
     relay: false,
     name: 'House A',
-    status: 'UNKNOWN',
+    status: 'OFFLINE',
     transfer: 'STOPPED',
     online: false,
     voltage: 0,
@@ -16,22 +16,18 @@ const mockFallback = {
   },
   houseB: {
     solar: 0,
-    load: 150,
+    load: 0,
     relay: false,
     name: 'House B',
-    status: 'UNKNOWN',
+    status: 'OFFLINE',
     transfer: 'STOPPED',
     online: false,
     voltage: 0,
     current: 0,
   },
-  battery: 54,
+  battery: 0,
   batteryVoltage: 0,
   batteryStatus: 'UNKNOWN',
-  savings: 1250,
-  gridRed: 32,
-  gini: 0.18,
-  co2: 45,
   mqttConnected: false,
   brokerConnected: false,
   housesOnline: 0,
@@ -39,11 +35,31 @@ const mockFallback = {
   transferLog: [],
   devices: [],
   surplusSources: [
-    { value: 'House A', surplus: 100, status: 'SURPLUS' },
-    { value: 'House B', surplus: 0, status: 'DEFICIT' },
+    { value: 'House A', surplus: 0, status: 'OFFLINE' },
+    { value: 'House B', surplus: 0, status: 'OFFLINE' },
   ],
   source: 'mock',
 };
+
+function houseFromApi(apiHouse, online) {
+  const solar = online ? Number(apiHouse.solar ?? 0) : 0;
+  const load = online ? Number(apiHouse.load ?? 0) : 0;
+  return {
+    name: apiHouse.name,
+    solar,
+    load,
+    relay: online && Boolean(apiHouse.relay),
+    voltage: online ? apiHouse.voltage : 0,
+    current: online ? apiHouse.current : 0,
+    status: online ? apiHouse.status : 'OFFLINE',
+    transfer: apiHouse.transfer,
+    online,
+    battery_voltage: apiHouse.battery_voltage,
+    battery_percent: apiHouse.battery_percent,
+    battery_status: apiHouse.battery_status,
+    wattage: online ? apiHouse.wattage : 0,
+  };
+}
 
 function mapApiToState(api) {
   const brokerConnected = Boolean(api.mqtt?.connected);
@@ -52,48 +68,22 @@ function mapApiToState(api) {
   const houseBOnline = Boolean(api.houseB?.online);
 
   return {
-    houseA: {
-      name: api.houseA.name,
-      solar: api.houseA.solar,
-      load: api.houseA.load,
-      relay: houseAOnline && Boolean(api.houseA.relay),
-      voltage: api.houseA.voltage,
-      current: api.houseA.current,
-      status: api.houseA.status,
-      transfer: api.houseA.transfer,
-      online: houseAOnline,
-      battery_voltage: api.houseA.battery_voltage,
-      battery_percent: api.houseA.battery_percent,
-      battery_status: api.houseA.battery_status,
-    },
-    houseB: {
-      name: api.houseB.name,
-      solar: api.houseB.solar,
-      load: api.houseB.load,
-      relay: houseBOnline && Boolean(api.houseB.relay),
-      voltage: api.houseB.voltage,
-      current: api.houseB.current,
-      status: api.houseB.status,
-      transfer: api.houseB.transfer,
-      online: houseBOnline,
-      battery_voltage: api.houseB.battery_voltage,
-      battery_percent: api.houseB.battery_percent,
-      battery_status: api.houseB.battery_status,
-    },
-    battery: api.battery,
-    batteryVoltage: api.battery_voltage ?? api.battery,
-    batteryStatus: api.battery_status ?? 'UNKNOWN',
-    savings: api.savings,
-    gridRed: api.gridRed,
-    gini: api.gini,
-    co2: api.co2,
+    houseA: houseFromApi(api.houseA, houseAOnline),
+    houseB: houseFromApi(api.houseB, houseBOnline),
+    battery: housesOnline > 0 ? api.battery : 0,
+    batteryVoltage: housesOnline > 0 ? (api.battery_voltage ?? api.battery) : 0,
+    batteryStatus: housesOnline > 0 ? (api.battery_status ?? 'UNKNOWN') : 'UNKNOWN',
     brokerConnected,
     housesOnline: housesOnline || Number(houseAOnline) + Number(houseBOnline),
     mqttConnected: brokerConnected && (houseAOnline || houseBOnline),
     lastSync: api.mqtt?.last_message_at ?? null,
     transferLog: api.transfer_log ?? [],
     devices: api.devices ?? [],
-    surplusSources: api.surplus_sources ?? mockFallback.surplusSources,
+    surplusSources: (api.surplus_sources ?? []).map((s, i) => {
+      const online = i === 0 ? houseAOnline : houseBOnline;
+      if (!online) return { ...s, surplus: 0, status: 'OFFLINE' };
+      return s;
+    }),
     source: 'mqtt',
   };
 }

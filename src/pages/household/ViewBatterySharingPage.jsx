@@ -1,19 +1,65 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import StatTile from '../../components/ui/StatTile';
 import BatteryActionIndicator from '../../components/clustering/BatteryActionIndicator';
 import BatteryOrganism from '../../components/energy/BatteryOrganism';
 import { otherCircuit, resolveCircuit } from '../../constants/circuits';
 import { useHouseholdCluster } from '../../hooks/useClustering';
+import { estimateCo2Kg, useLatestSimulation } from '../../hooks/useLatestSimulation';
 import { getMemberHouse, getMemberSurplus, useLiveData } from '../../hooks/useLiveData';
-import { householdMemberStats } from '../../constants/mockSimulation';
+
+function formatCurrency(value) {
+  return `₱${Number(value || 0).toLocaleString('en-PH', { maximumFractionDigits: 0 })}`;
+}
 
 export default function ViewBatterySharingPage({ householdId = 'HH-01' }) {
   const data = useLiveData();
+  const { results: sim } = useLatestSimulation();
   const { record: cluster } = useHouseholdCluster(householdId);
   const mine = resolveCircuit(householdId);
   const peer = otherCircuit(householdId);
   const myHouse = getMemberHouse(data, householdId);
   const mySurplus = getMemberSurplus(data, householdId);
+
+  const householdShare = sim?.household_comparison?.find((h) => h.id === householdId)?.share;
+  const shareFactor = householdShare != null ? householdShare / 100 : 0.25;
+  const yourSolarKwh =
+    sim?.solar_generated_kwh != null
+      ? Math.round(sim.solar_generated_kwh * shareFactor)
+      : null;
+
+  const stats = useMemo(() => {
+    const yourSavings = sim ? Math.round(sim.total_savings_php * shareFactor) : null;
+    const soc = myHouse.online
+      ? `${Math.round(myHouse.battery_percent ?? data.battery)}%`
+      : '—';
+
+    return [
+      {
+        id: 'savings',
+        label: 'Your Savings',
+        value: yourSavings != null ? formatCurrency(yourSavings) : '—',
+        bgKey: 'savings',
+      },
+      {
+        id: 'solar',
+        label: 'Solar (live)',
+        value: myHouse.online ? `${myHouse.solar} W` : '—',
+        bgKey: 'solar',
+      },
+      {
+        id: 'soc',
+        label: 'Battery SOC',
+        value: soc,
+        bgKey: 'battery',
+      },
+      {
+        id: 'grid',
+        label: 'Grid Reduction',
+        value: sim ? `${sim.grid_reduction_pct}%` : '—',
+        bgKey: 'grid',
+      },
+    ];
+  }, [sim, shareFactor, myHouse, data.battery]);
 
   return (
     <div className="space-y-5">
@@ -25,10 +71,17 @@ export default function ViewBatterySharingPage({ householdId = 'HH-01' }) {
       </div>
 
       <div className="grid grid-cols-2 gap-3 max-w-lg">
-        {householdMemberStats.map((s) => (
+        {stats.map((s) => (
           <StatTile key={s.id} label={s.label} value={s.value} bgKey={s.bgKey} icon="🔋" />
         ))}
       </div>
+
+      {sim && (
+        <p className="text-xs text-black/50">
+          CO₂ offset (community): ~{estimateCo2Kg(sim.solar_generated_kwh)} kg from latest simulation.
+          {yourSolarKwh != null && ` Your share ≈ ${yourSolarKwh} kWh solar.`}
+        </p>
+      )}
 
       {cluster && (
         <BatteryActionIndicator
@@ -49,15 +102,18 @@ export default function ViewBatterySharingPage({ householdId = 'HH-01' }) {
           <li className="flex justify-between border-b border-black/5 pb-2">
             <span>Net power</span>
             <span className="font-mono font-semibold text-emerald-800">
-              {mySurplus >= 0 ? '+' : ''}
-              {mySurplus}W
+              {!myHouse.online ? '—' : `${mySurplus >= 0 ? '+' : ''}${mySurplus}W`}
             </span>
           </li>
           <li className="flex justify-between">
             <span>Load / solar</span>
             <span className="font-mono">
-              {myHouse.load}W / {myHouse.solar}W
+              {!myHouse.online ? '—' : `${myHouse.load}W / ${myHouse.solar}W`}
             </span>
+          </li>
+          <li className="flex justify-between border-t border-black/5 pt-2">
+            <span>Status</span>
+            <span className="font-mono">{myHouse.online ? myHouse.status : 'OFFLINE'}</span>
           </li>
         </ul>
       </div>

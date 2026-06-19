@@ -59,7 +59,7 @@ def _live_house_record(code: str, house: dict[str, Any], battery_pct: float) -> 
 
 def run_live_clustering() -> dict[str, Any]:
     live = get_live_payload()
-    battery_pct = float(live.get("battery") or live.get("battery_percent") or 54)
+    battery_pct = float(live.get("battery") or live.get("battery_percent") or 0)
 
     households: list[dict[str, Any]] = []
     for code, key in (("A", "houseA"), ("B", "houseB")):

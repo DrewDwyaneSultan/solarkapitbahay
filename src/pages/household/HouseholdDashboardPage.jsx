@@ -1,34 +1,76 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import Card from '../../components/ui/Card';
 import StatTile from '../../components/ui/StatTile';
 import BatteryOrganism from '../../components/energy/BatteryOrganism';
 import BatteryActionIndicator from '../../components/clustering/BatteryActionIndicator';
 import SimpleLineChart from '../../components/charts/SimpleLineChart';
 import SimpleDualBarChart from '../../components/charts/SimpleDualBarChart';
-import { resolveCircuit } from '../../constants/circuits';
+import { CIRCUIT_HOUSES, resolveCircuit } from '../../constants/circuits';
 import { useHouseholdCluster } from '../../hooks/useClustering';
-import { getMemberHouse, useLiveData } from '../../hooks/useLiveData';
+import {
+  buildPeakHourChart,
+  buildSavingsTrend,
+  useLatestSimulation,
+} from '../../hooks/useLatestSimulation';
+import { getHouseCards, getMemberHouse, useLiveData } from '../../hooks/useLiveData';
 import LiveStatusBadge from '../../components/ui/LiveStatusBadge';
-import { householdMemberRows } from '../../constants/mockSimulation';
+
+function formatCurrency(value) {
+  return `₱${Number(value || 0).toLocaleString('en-PH', { maximumFractionDigits: 0 })}`;
+}
 
 export default function HouseholdDashboardPage({ memberName = 'User', householdId = 'HH-01' }) {
   const data = useLiveData();
+  const { results: sim } = useLatestSimulation();
   const circuit = resolveCircuit(householdId);
   const myHouse = getMemberHouse(data, householdId);
+  const houseCards = getHouseCards(data);
   const { record: cluster, loading: clusterLoading, error: clusterError } = useHouseholdCluster(
     householdId,
   );
   const [chartPeriod, setChartPeriod] = useState('week');
-  const savingsData = [12, 18, 22, 28, 35, 42, 48];
-  const hourWithout = [6, 5.5, 5, 4.5];
-  const hourWith = [2.5, 2, 1.5, 1];
-  const hourLabels = ['6PM', '7PM', '8PM', '9PM'];
+
+  const savingsTrend = useMemo(() => buildSavingsTrend(sim, chartPeriod), [sim, chartPeriod]);
+  const peakChart = useMemo(() => buildPeakHourChart(sim), [sim]);
+  const householdShare = sim?.household_comparison?.find((h) => h.id === householdId)?.share;
+  const shareFactor = householdShare != null ? householdShare / 100 : 0.25;
+  const yourSavings = sim ? Math.round(sim.total_savings_php * shareFactor) : null;
+  const yourMonthly = sim ? Math.round((sim.monthly_savings_php ?? 0) * shareFactor) : null;
+
+  const liveSolar = myHouse.online ? `${myHouse.solar} W` : '—';
+  const liveSoc = myHouse.online
+    ? `${Math.round(myHouse.battery_percent ?? data.battery)}%`
+    : '—';
 
   const stats = [
-    { id: 'savings', label: 'Your Savings', value: `₱${Math.round(data.savings / 4).toLocaleString()}`, bgKey: 'savings' },
-    { id: 'solar', label: 'Solar Generated', value: `${myHouse.solar} W`, bgKey: 'solar' },
-    { id: 'battery', label: 'Battery SOC', value: `${Math.round(data.battery)}%`, bgKey: 'battery' },
-    { id: 'grid', label: 'Grid Reduction', value: `${data.gridRed}%`, bgKey: 'grid' },
+    {
+      id: 'savings',
+      label: 'Your Savings',
+      value: yourSavings != null ? formatCurrency(yourSavings) : '—',
+      bgKey: 'savings',
+      hint: sim ? 'Your share from the latest community simulation.' : 'Run a simulation as operator first.',
+    },
+    {
+      id: 'solar',
+      label: 'Solar (live)',
+      value: liveSolar,
+      bgKey: 'solar',
+      hint: myHouse.online ? 'Instantaneous watts from your ESP32.' : 'No live ESP data.',
+    },
+    {
+      id: 'battery',
+      label: 'Battery SOC',
+      value: liveSoc,
+      bgKey: 'battery',
+      hint: myHouse.online ? 'State of charge from MQTT.' : 'Offline until ESP connects.',
+    },
+    {
+      id: 'grid',
+      label: 'Grid Reduction',
+      value: sim ? `${sim.grid_reduction_pct}%` : '—',
+      bgKey: 'grid',
+      hint: sim ? 'Community-wide from latest simulation.' : undefined,
+    },
   ];
 
   return (
@@ -39,8 +81,14 @@ export default function HouseholdDashboardPage({ memberName = 'User', householdI
             Welcome, <em className="text-sk-accent not-italic">{memberName}</em>
           </h2>
           <p className="text-sm text-sk-ink-muted mt-1">
-            {circuit.name} · share this month:{' '}
-            <strong className="text-emerald-800">₱{Math.round(data.savings / 2).toLocaleString()}</strong>
+            {circuit.name} ·{' '}
+            {yourMonthly != null ? (
+              <>
+                projected share: <strong className="text-emerald-800">{formatCurrency(yourMonthly)}/mo</strong>
+              </>
+            ) : (
+              <>live solar: <strong className="text-sk-ink">{liveSolar}</strong></>
+            )}
           </p>
         </div>
         <LiveStatusBadge data={data} />
@@ -48,7 +96,13 @@ export default function HouseholdDashboardPage({ memberName = 'User', householdI
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {stats.map((stat) => (
-          <StatTile key={stat.id} label={stat.label} value={stat.value} bgKey={stat.bgKey} />
+          <StatTile
+            key={stat.id}
+            label={stat.label}
+            value={stat.value}
+            bgKey={stat.bgKey}
+            hint={stat.hint}
+          />
         ))}
       </div>
 
@@ -89,49 +143,62 @@ export default function HouseholdDashboardPage({ memberName = 'User', householdI
               </button>
             ))}
           </div>
-          <SimpleLineChart data={savingsData} height={120} />
+          {sim ? (
+            <SimpleLineChart data={savingsTrend} height={120} />
+          ) : (
+            <p className="text-sm text-sk-ink-muted py-10 text-center">No simulation data yet.</p>
+          )}
         </Card>
 
         <Card title="Peak Hour Savings" className="xl:col-span-1">
           <p className="text-xs text-sk-ink-muted mb-3">6 PM – 9 PM · Avoided peak rates</p>
-          <SimpleDualBarChart withoutData={hourWithout} withData={hourWith} labels={hourLabels} />
+          {sim ? (
+            <SimpleDualBarChart
+              withoutData={peakChart.without}
+              withData={peakChart.withSharing}
+              labels={peakChart.labels}
+            />
+          ) : (
+            <p className="text-sm text-sk-ink-muted py-10 text-center">No simulation data yet.</p>
+          )}
         </Card>
       </div>
 
       <Card title="Two-Circuit Network">
-        <div className="grid grid-cols-1 md:grid-cols-[1fr_120px] gap-4">
-          <div className="space-y-3">
-            {householdMemberRows.map((r) => (
-              <div key={r.id} className="flex items-center gap-3">
-                <span className="w-9 h-9 rounded-full bg-sk-placeholder border border-sk-card-border" />
-                <div className="flex-1">
-                  <div className="h-2.5 rounded-full bg-sk-placeholder overflow-hidden">
+        <div className="space-y-3">
+          {houseCards.map((h) => {
+            const meta = CIRCUIT_HOUSES.find((c) => c.name === h.name);
+            const pct = h.online && h.solar + h.load > 0
+              ? Math.min(100, Math.round((h.solar / (h.solar + h.load)) * 100))
+              : 0;
+            return (
+              <div key={h.name} className="flex items-center gap-3">
+                <span
+                  className={`w-9 h-9 rounded-full border flex items-center justify-center text-[10px] font-bold ${
+                    h.online ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-stone-100 border-stone-200 text-stone-500'
+                  }`}
+                >
+                  {h.online ? 'ON' : '—'}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-sk-ink truncate">
+                    {h.name} · {meta?.id ?? '—'}
+                  </p>
+                  <div className="h-2.5 rounded-full bg-sk-placeholder overflow-hidden mt-1">
                     <div
-                      className="h-full bg-sk-accent/70"
-                      style={{ width: r.ok ? '78%' : '42%' }}
+                      className="h-full bg-sk-accent/70 transition-all"
+                      style={{ width: `${pct}%` }}
                     />
                   </div>
+                  <p className="text-[10px] text-sk-ink-muted mt-0.5">
+                    {h.online
+                      ? `${h.solar}W solar · ${h.load}W load · ${h.status}`
+                      : 'Offline — no ESP data'}
+                  </p>
                 </div>
-                <span className="w-10 flex justify-center text-sm font-bold">
-                  {r.ok ? (
-                    <span className="text-emerald-700">✓</span>
-                  ) : (
-                    <span className="text-rose-600">✕</span>
-                  )}
-                </span>
               </div>
-            ))}
-          </div>
-          <div className="space-y-3">
-            {householdMemberRows.map((r) => (
-              <div
-                key={r.id}
-                className="text-[10px] uppercase tracking-widest text-sk-ink-muted text-right leading-9"
-              >
-                {r.id}
-              </div>
-            ))}
-          </div>
+            );
+          })}
         </div>
       </Card>
     </div>

@@ -18,11 +18,9 @@ export default function EnergyTransferPage() {
   const [mode, setMode] = useState('auto');
   const [autoMode, setAutoMode] = useState(true);
   const [showAutoLog, setShowAutoLog] = useState(false);
-  const [countdown, setCountdown] = useState(154);
+  const [countdown, setCountdown] = useState(300);
   const [fromHouse, setFromHouse] = useState('House A');
-  const [recipients, setRecipients] = useState([
-    { id: 1, house: 'House B', need: 150, amount: 80 },
-  ]);
+  const [recipients, setRecipients] = useState([]);
   const [scanning, setScanning] = useState(false);
   const [showTransferAnim, setShowTransferAnim] = useState(false);
 
@@ -58,9 +56,30 @@ export default function EnergyTransferPage() {
   }, [txHistory, liveData]);
 
   useEffect(() => {
+    if (!liveData.mqttConnected) return undefined;
     const id = setInterval(() => setCountdown((c) => (c <= 0 ? 300 : c - 1)), 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [liveData.mqttConnected]);
+
+  useEffect(() => {
+    const cards = getHouseCards(liveData);
+    const surplus = cards.find((h) => h.online && h.surplus > 0);
+    const deficit = cards.find((h) => h.online && h.surplus < 0);
+    if (!surplus || !deficit) {
+      setRecipients([]);
+      return;
+    }
+    setFromHouse(surplus.name);
+    const need = Math.abs(deficit.surplus);
+    setRecipients([
+      {
+        id: 1,
+        house: deficit.name,
+        need,
+        amount: Math.min(need, surplus.surplus),
+      },
+    ]);
+  }, [liveData]);
 
   const surplusSources = liveData.surplusSources ?? [];
   const devices = liveData.devices?.length ? liveData.devices : [];
@@ -112,10 +131,34 @@ export default function EnergyTransferPage() {
         <Card title="Live Snapshot">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {[
-              { label: 'House A Solar', val: liveData.houseA.solar, unit: 'W', sub: `${liveData.houseA.voltage?.toFixed?.(1) ?? '—'} V · ${liveData.houseA.current?.toFixed?.(2) ?? '—'} A` },
-              { label: 'House B Solar', val: liveData.houseB.solar, unit: 'W', sub: `${liveData.houseB.voltage?.toFixed?.(1) ?? '—'} V · ${liveData.houseB.current?.toFixed?.(2) ?? '—'} A` },
-              { label: 'Battery SOC', val: Math.round(liveData.battery), unit: '%', sub: liveData.batteryStatus },
-              { label: 'Battery V', val: liveData.batteryVoltage?.toFixed?.(2) ?? '—', unit: 'V', sub: 'Community 18650' },
+              {
+                label: 'House A Solar',
+                val: liveData.houseA.online ? liveData.houseA.solar : '—',
+                unit: liveData.houseA.online ? 'W' : '',
+                sub: liveData.houseA.online
+                  ? `${liveData.houseA.voltage?.toFixed?.(1) ?? '—'} V · ${liveData.houseA.current?.toFixed?.(2) ?? '—'} A`
+                  : 'Offline',
+              },
+              {
+                label: 'House B Solar',
+                val: liveData.houseB.online ? liveData.houseB.solar : '—',
+                unit: liveData.houseB.online ? 'W' : '',
+                sub: liveData.houseB.online
+                  ? `${liveData.houseB.voltage?.toFixed?.(1) ?? '—'} V · ${liveData.houseB.current?.toFixed?.(2) ?? '—'} A`
+                  : 'Offline',
+              },
+              {
+                label: 'Battery SOC',
+                val: liveData.mqttConnected ? Math.round(liveData.battery) : '—',
+                unit: liveData.mqttConnected ? '%' : '',
+                sub: liveData.mqttConnected ? liveData.batteryStatus : 'No live data',
+              },
+              {
+                label: 'Battery V',
+                val: liveData.mqttConnected ? (liveData.batteryVoltage?.toFixed?.(2) ?? '—') : '—',
+                unit: liveData.mqttConnected ? 'V' : '',
+                sub: 'Community 18650',
+              },
             ].map((row) => (
               <div key={row.label} className="rounded-xl border border-sk-card-border/40 bg-white/70 p-3">
                 <div className="flex items-center gap-2 mb-2">
@@ -138,7 +181,11 @@ export default function EnergyTransferPage() {
               <span className={`w-3 h-3 rounded-full ${autoMode ? 'bg-emerald-600 animate-pulse' : 'bg-stone-400'}`} />
               <div className="flex-1">
                 <p className="font-semibold text-sk-ink">Greedy algorithm — automated routing</p>
-                <p className="text-xs text-sk-ink-muted">Next decision in {fmtCountdown(countdown)}</p>
+                <p className="text-xs text-sk-ink-muted">
+                  {liveData.mqttConnected
+                    ? `Next decision in ${fmtCountdown(countdown)}`
+                    : 'Waiting for ESP32 MQTT data…'}
+                </p>
               </div>
               <Toggle on={autoMode} onChange={setAutoMode} label="Automated mode" />
             </div>

@@ -386,14 +386,14 @@ def get_live_payload() -> dict[str, Any]:
     online_a = _is_online(ha)
     online_b = _is_online(hb)
 
-    solar_a = ha["wattage"]
-    solar_b = hb["wattage"]
-    load_a = _estimate_load(solar_a, ha["status"])
-    load_b = _estimate_load(solar_b, hb["status"])
+    solar_a = ha["wattage"] if online_a else 0.0
+    solar_b = hb["wattage"] if online_b else 0.0
+    load_a = _estimate_load(solar_a, ha["status"]) if online_a else 0.0
+    load_b = _estimate_load(solar_b, hb["status"]) if online_b else 0.0
 
-    bat_pct = int(bat.get("percent") or ha.get("battery_percent") or 0)
-    bat_v = float(bat.get("voltage") or ha.get("battery_voltage") or 0)
-    bat_stat = str(bat.get("status") or ha.get("battery_status") or "UNKNOWN")
+    bat_pct = int(bat.get("percent") or ha.get("battery_percent") or 0) if (online_a or online_b) else 0
+    bat_v = float(bat.get("voltage") or ha.get("battery_voltage") or 0) if (online_a or online_b) else 0.0
+    bat_stat = str(bat.get("status") or ha.get("battery_status") or "UNKNOWN") if (online_a or online_b) else "UNKNOWN"
 
     houses_online = int(online_a) + int(online_b)
     broker_reachable = bool(broker) and bool(mqtt_ok or houses_online > 0 or last_msg)
@@ -408,12 +408,12 @@ def get_live_payload() -> dict[str, Any]:
         },
         "houseA": {
             "name": "House A",
-            "voltage": ha["voltage"],
-            "current": ha["current"],
+            "voltage": ha["voltage"] if online_a else 0.0,
+            "current": ha["current"] if online_a else 0.0,
             "solar": round(solar_a, 2),
             "load": round(load_a, 1),
             "wattage": round(solar_a, 2),
-            "status": ha["status"],
+            "status": ha["status"] if online_a else "OFFLINE",
             "transfer": ha["transfer"],
             "relay": online_a and _relay_on("A", ha, hb),
             "online": online_a,
@@ -423,12 +423,12 @@ def get_live_payload() -> dict[str, Any]:
         },
         "houseB": {
             "name": "House B",
-            "voltage": hb["voltage"],
-            "current": hb["current"],
+            "voltage": hb["voltage"] if online_b else 0.0,
+            "current": hb["current"] if online_b else 0.0,
             "solar": round(solar_b, 2),
             "load": round(load_b, 1),
             "wattage": round(solar_b, 2),
-            "status": hb["status"],
+            "status": hb["status"] if online_b else "OFFLINE",
             "transfer": hb["transfer"],
             "relay": online_b and _relay_on("B", hb, ha),
             "online": online_b,
@@ -457,21 +457,21 @@ def get_live_payload() -> dict[str, Any]:
             {
                 "value": "House A",
                 "surplus": max(0, round(solar_a - load_a)),
-                "status": ha["status"],
+                "status": ha["status"] if online_a else "OFFLINE",
             },
             {
                 "value": "House B",
                 "surplus": max(0, round(solar_b - load_b)),
-                "status": hb["status"],
+                "status": hb["status"] if online_b else "OFFLINE",
             },
         ],
-        "battery": bat_pct if bat_pct > 0 else 54,
+        "battery": bat_pct if bat_pct > 0 else 0,
         "battery_voltage": bat_v,
         "battery_status": bat_stat,
-        "savings": 1250,
-        "gridRed": 32,
-        "gini": 0.18,
-        "co2": 45,
+        "savings": 0,
+        "gridRed": 0,
+        "gini": 0,
+        "co2": 0,
     }
 
 
