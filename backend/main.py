@@ -235,8 +235,8 @@ def auth_status() -> dict:
 
 @router.get("/auth/me")
 def auth_me(user_id: str = Depends(get_auth_user_id)) -> dict:
-    ensure_app_db()
     try:
+        ensure_app_db()
         profile = get_user_profile(user_id)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Could not load profile: {exc}") from exc

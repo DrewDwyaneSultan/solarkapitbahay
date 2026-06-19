@@ -386,20 +386,17 @@ def _migrate_onboarding(conn) -> None:
 
     barangay_cols = _table_columns(conn, "barangays")
     if "barangay_code" not in barangay_cols:
-        if use_postgres():
-            conn.execute("ALTER TABLE barangays ADD COLUMN barangay_code TEXT")
-            conn.execute("ALTER TABLE barangays ADD COLUMN city_municipality TEXT")
-            conn.execute("ALTER TABLE barangays ADD COLUMN province TEXT")
-            conn.execute("ALTER TABLE barangays ADD COLUMN operator_user_id TEXT")
-        else:
-            conn.execute("ALTER TABLE barangays ADD COLUMN barangay_code TEXT")
-            conn.execute("ALTER TABLE barangays ADD COLUMN city_municipality TEXT")
-            conn.execute("ALTER TABLE barangays ADD COLUMN province TEXT")
-            conn.execute("ALTER TABLE barangays ADD COLUMN operator_user_id TEXT")
-        conn.execute(
-            "UPDATE barangays SET barangay_code = ? WHERE barangay_code IS NULL",
-            (f"SK-MABINI-{_random_code(4)}",),
-        )
+        conn.execute("ALTER TABLE barangays ADD COLUMN barangay_code TEXT")
+    if "city_municipality" not in barangay_cols:
+        conn.execute("ALTER TABLE barangays ADD COLUMN city_municipality TEXT")
+    if "province" not in barangay_cols:
+        conn.execute("ALTER TABLE barangays ADD COLUMN province TEXT")
+    if "operator_user_id" not in barangay_cols:
+        conn.execute("ALTER TABLE barangays ADD COLUMN operator_user_id TEXT")
+    conn.execute(
+        "UPDATE barangays SET barangay_code = ? WHERE barangay_code IS NULL",
+        (f"SK-MABINI-{_random_code(4)}",),
+    )
 
     hh_cols = _table_columns(conn, "households")
     if "household_code" not in hh_cols:
@@ -1416,17 +1413,20 @@ def _derive_roles(profile: dict, conn: Any = None, auth_user_id: str | None = No
         role_set.add(primary)
 
     if conn and auth_user_id:
-        reg = fetchone(
-            conn,
-            """
-            SELECT 1 AS ok FROM household_registrations
-            WHERE applicant_user_id = ? AND status IN ('pending', 'approved')
-            LIMIT 1
-            """,
-            (auth_user_id,),
-        )
-        if reg:
-            role_set.add("household")
+        try:
+            reg = fetchone(
+                conn,
+                """
+                SELECT 1 AS ok FROM household_registrations
+                WHERE applicant_user_id = ? AND status IN ('pending', 'approved')
+                LIMIT 1
+                """,
+                (auth_user_id,),
+            )
+            if reg:
+                role_set.add("household")
+        except Exception:
+            pass
 
     ordered: list[str] = []
     if "operator" in role_set:
@@ -1486,6 +1486,61 @@ def _ensure_roles_column(conn: Any) -> None:
     _backfill_roles_column(conn)
 
 
+def _ensure_auth_schema(conn: Any) -> None:
+    """Ensure columns/tables required by auth profile queries exist (idempotent)."""
+    _migrate_onboarding(conn)
+    _ensure_roles_column(conn)
+
+
+def _fetch_profile_row(conn: Any, auth_user_id: str) -> dict | None:
+    """Load profile row; fall back if optional operator join columns are missing."""
+    full_sql = """
+            SELECT p.*,
+                   h.circuit_name,
+                   h.head_name AS house_label,
+                   hb.name AS barangay_name,
+                   hb.barangay_code,
+                   ob.name AS operator_barangay_name,
+                   ob.barangay_code AS operator_barangay_code
+            FROM user_profiles p
+            LEFT JOIN households h ON h.id = p.household_id
+            LEFT JOIN barangays hb ON hb.id = p.barangay_id
+            LEFT JOIN barangays ob ON ob.operator_user_id = p.id
+            WHERE p.id = ?
+            """
+    basic_sql = """
+            SELECT p.*,
+                   h.circuit_name,
+                   h.head_name AS house_label,
+                   hb.name AS barangay_name,
+                   hb.barangay_code
+            FROM user_profiles p
+            LEFT JOIN households h ON h.id = p.household_id
+            LEFT JOIN barangays hb ON hb.id = p.barangay_id
+            WHERE p.id = ?
+            """
+    try:
+        row = fetchone(conn, full_sql, (auth_user_id,))
+    except Exception:
+        row = fetchone(conn, basic_sql, (auth_user_id,))
+    if not row:
+        return None
+
+    barangay_cols = _table_columns(conn, "barangays")
+    if "operator_user_id" in barangay_cols and not row.get("operator_barangay_name"):
+        op_bg = fetchone(
+            conn,
+            """
+            SELECT name AS operator_barangay_name, barangay_code AS operator_barangay_code
+            FROM barangays WHERE operator_user_id = ?
+            """,
+            (auth_user_id,),
+        )
+        if op_bg:
+            row.update(op_bg)
+    return row
+
+
 def _json_safe_value(value: Any) -> Any:
     if isinstance(value, Decimal):
         return float(value)
@@ -1520,42 +1575,28 @@ def _maybe_backfill_roles(conn: Any, auth_user_id: str, derived: list[str], row:
 
 def get_user_profile(auth_user_id: str) -> dict | None:
     with db_connection() as conn:
-        _ensure_roles_column(conn)
-        row = fetchone(
-            conn,
-            """
-            SELECT p.*,
-                   h.circuit_name,
-                   h.head_name AS house_label,
-                   hb.name AS barangay_name,
-                   hb.barangay_code,
-                   ob.name AS operator_barangay_name,
-                   ob.barangay_code AS operator_barangay_code
-            FROM user_profiles p
-            LEFT JOIN households h ON h.id = p.household_id
-            LEFT JOIN barangays hb ON hb.id = p.barangay_id
-            LEFT JOIN barangays ob ON ob.operator_user_id = p.id
-            WHERE p.id = ?
-            """,
-            (auth_user_id,),
-        )
+        _ensure_auth_schema(conn)
+        row = _fetch_profile_row(conn, auth_user_id)
         if not row:
             return None
         profile = _profile_row_to_dict(row, conn, auth_user_id)
         _maybe_backfill_roles(conn, auth_user_id, profile["roles"], dict(row))
         if profile.get("status") == "rejected":
-            reg = fetchone(
-                conn,
-                """
-                SELECT rejection_reason FROM household_registrations
-                WHERE applicant_user_id = ? AND status = 'rejected'
-                ORDER BY reviewed_at DESC, id DESC
-                LIMIT 1
-                """,
-                (auth_user_id,),
-            )
-            if reg and reg.get("rejection_reason"):
-                profile["rejection_reason"] = reg["rejection_reason"]
+            try:
+                reg = fetchone(
+                    conn,
+                    """
+                    SELECT rejection_reason FROM household_registrations
+                    WHERE applicant_user_id = ? AND status = 'rejected'
+                    ORDER BY reviewed_at DESC, id DESC
+                    LIMIT 1
+                    """,
+                    (auth_user_id,),
+                )
+                if reg and reg.get("rejection_reason"):
+                    profile["rejection_reason"] = reg["rejection_reason"]
+            except Exception:
+                pass
     return _json_safe_profile(profile)
 
 

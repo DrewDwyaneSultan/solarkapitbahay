@@ -42,7 +42,16 @@ export async function fetchMe(accessToken) {
       }
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        const err = new Error(body.detail ?? `Auth failed (${res.status})`);
+        const raw = body.detail;
+        const detail =
+          typeof raw === 'string'
+            ? raw
+            : Array.isArray(raw)
+              ? raw.map((d) => d?.msg ?? JSON.stringify(d)).join('; ')
+              : raw
+                ? String(raw)
+                : null;
+        const err = new Error(detail ?? `Auth failed (${res.status})`);
         err.status = res.status;
         throw err;
       }
