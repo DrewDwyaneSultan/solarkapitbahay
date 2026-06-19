@@ -9,6 +9,9 @@ export default function DashboardLayout({
   barangayName,
   headerSubtitle,
   onLogout,
+  profileRoles,
+  activeRole,
+  onSwitchRole,
   children,
 }) {
   return (
@@ -18,6 +21,9 @@ export default function DashboardLayout({
         onNavigate={onNavigate}
         operator={operator}
         onLogout={onLogout}
+        profileRoles={profileRoles}
+        activeRole={activeRole}
+        onSwitchRole={onSwitchRole}
       />
       <main className="flex-1 min-w-0 overflow-auto">
         <div className="max-w-[1200px] mx-auto px-6 py-6 md:px-8 md:py-8">

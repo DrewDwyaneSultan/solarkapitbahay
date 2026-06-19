@@ -31,6 +31,9 @@ export default function OperatorDashboard({
   barangayName,
   barangayCode,
   accessToken,
+  profileRoles,
+  activeRole,
+  onSwitchRole,
   onLogout,
 }) {
   const [activePage, setActivePage] = useState('dashboard');
@@ -45,6 +48,9 @@ export default function OperatorDashboard({
       barangayName={barangayName}
       headerSubtitle={headerSubtitles[activePage]}
       onLogout={onLogout}
+      profileRoles={profileRoles}
+      activeRole={activeRole}
+      onSwitchRole={onSwitchRole}
     >
       {activePage === 'dashboard' ? (
         <DashboardPage operatorName={operator?.name} />

@@ -416,6 +416,17 @@ def _migrate_onboarding(conn) -> None:
     if profile_cols and "barangay_id" not in profile_cols:
         conn.execute("ALTER TABLE user_profiles ADD COLUMN barangay_id INTEGER REFERENCES barangays(id)")
 
+    profile_cols = _table_columns(conn, "user_profiles")
+    if profile_cols and "roles" not in profile_cols:
+        conn.execute("ALTER TABLE user_profiles ADD COLUMN roles TEXT")
+        conn.execute(
+            """
+            UPDATE user_profiles
+            SET roles = '["' || role || '"]'
+            WHERE roles IS NULL OR roles = ''
+            """
+        )
+
     # Backfill demo barangay code and claimable households for seeded data
     demo = fetchone(conn, "SELECT id, barangay_code FROM barangays ORDER BY id LIMIT 1")
     if demo and not demo.get("barangay_code"):
@@ -1355,11 +1366,60 @@ def get_run(run_id: int) -> dict | None:
     return data
 
 
+def _parse_roles(profile_or_roles: Any) -> list[str]:
+    if isinstance(profile_or_roles, dict):
+        raw = profile_or_roles.get("roles")
+        primary = profile_or_roles.get("role")
+    else:
+        raw = profile_or_roles
+        primary = None
+    if raw:
+        try:
+            parsed = json.loads(raw) if isinstance(raw, str) else raw
+            if isinstance(parsed, list):
+                return [r for r in parsed if r in ("operator", "household")]
+        except (json.JSONDecodeError, TypeError):
+            pass
+    if primary in ("operator", "household"):
+        return [primary]
+    return ["operator"]
+
+
+def _serialize_roles(roles: list[str]) -> str:
+    unique: list[str] = []
+    for role in roles:
+        if role in ("operator", "household") and role not in unique:
+            unique.append(role)
+    if not unique:
+        unique = ["operator"]
+    return json.dumps(unique)
+
+
+def profile_has_role(profile: dict | None, role: str) -> bool:
+    if not profile:
+        return False
+    return role in _parse_roles(profile)
+
+
+def _enrich_profile(profile: dict) -> dict:
+    roles = _parse_roles(profile)
+    has_operator = "operator" in roles
+    has_household = "household" in roles
+    active = profile.get("role")
+    if active not in roles:
+        active = roles[0]
+    profile["roles"] = roles
+    profile["has_operator"] = has_operator
+    profile["has_household"] = has_household
+    profile["role"] = active
+    return profile
+
+
 def _profile_row_to_dict(row: Any) -> dict:
     data = dict(row)
     data["has_solar"] = bool(data.get("has_solar"))
     data["has_battery"] = bool(data.get("has_battery"))
-    return data
+    return _enrich_profile(data)
 
 
 def get_user_profile(auth_user_id: str) -> dict | None:
@@ -1370,11 +1430,14 @@ def get_user_profile(auth_user_id: str) -> dict | None:
             SELECT p.*,
                    h.circuit_name,
                    h.head_name AS house_label,
-                   b.name AS barangay_name,
-                   b.barangay_code
+                   hb.name AS barangay_name,
+                   hb.barangay_code,
+                   ob.name AS operator_barangay_name,
+                   ob.barangay_code AS operator_barangay_code
             FROM user_profiles p
             LEFT JOIN households h ON h.id = p.household_id
-            LEFT JOIN barangays b ON b.id = p.barangay_id
+            LEFT JOIN barangays hb ON hb.id = p.barangay_id
+            LEFT JOIN barangays ob ON ob.operator_user_id = p.id
             WHERE p.id = ?
             """,
             (auth_user_id,),
@@ -1453,47 +1516,67 @@ def upsert_user_profile(
 
     now = _utc_now()
     existing = get_user_profile(auth_user_id)
+    existing_roles = _parse_roles(existing) if existing else []
+    merged_roles = list(dict.fromkeys([*existing_roles, role]))
+    roles_json = _serialize_roles(merged_roles)
+    active_role = role
+
+    if existing and "household" in existing_roles and role == "operator":
+        status = existing.get("status") or status
 
     with db_connection() as conn:
         if existing:
-            conn.execute(
-                """
-                UPDATE user_profiles SET
-                    email = ?, role = ?, display_name = ?, barangay_id = ?,
-                    household_id = ?, address = ?, has_solar = ?, has_battery = ?,
-                    battery_model = ?, battery_capacity_kwh = ?,
-                    status = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                (
-                    email.lower(),
-                    role,
-                    display_name,
-                    resolved_barangay_id,
-                    resolved_household_id,
-                    address,
-                    int(has_solar),
-                    int(has_battery),
-                    battery_model,
-                    battery_capacity_kwh,
-                    status,
-                    now,
-                    auth_user_id,
-                ),
-            )
+            if role == "operator" and "household" in existing_roles:
+                conn.execute(
+                    """
+                    UPDATE user_profiles SET
+                        email = ?, role = ?, roles = ?, display_name = ?,
+                        updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (email.lower(), active_role, roles_json, display_name, now, auth_user_id),
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE user_profiles SET
+                        email = ?, role = ?, roles = ?, display_name = ?, barangay_id = ?,
+                        household_id = ?, address = ?, has_solar = ?, has_battery = ?,
+                        battery_model = ?, battery_capacity_kwh = ?,
+                        status = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        email.lower(),
+                        active_role,
+                        roles_json,
+                        display_name,
+                        resolved_barangay_id,
+                        resolved_household_id,
+                        address,
+                        int(has_solar),
+                        int(has_battery),
+                        battery_model,
+                        battery_capacity_kwh,
+                        status,
+                        now,
+                        auth_user_id,
+                    ),
+                )
         else:
             conn.execute(
                 """
                 INSERT INTO user_profiles (
-                    id, email, role, display_name, barangay_id, household_id, address,
+                    id, email, role, roles, display_name, barangay_id, household_id, address,
                     has_solar, has_battery, battery_model, battery_capacity_kwh,
                     status, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     auth_user_id,
                     email.lower(),
-                    role,
+                    active_role,
+                    roles_json,
                     display_name,
                     resolved_barangay_id,
                     resolved_household_id,
@@ -1535,52 +1618,55 @@ def upsert_user_profile(
 
 
 def switch_profile_to_operator(auth_user_id: str, email: str) -> dict:
-    """Let a pending/rejected household account become the barangay operator (same Google login)."""
+    """Add operator access to this Google account (keeps household access if present)."""
     profile = get_user_profile(auth_user_id)
     if not profile:
         raise ValueError("Profile not found. Complete sign-up first.")
-    if profile.get("role") == "operator":
-        return profile
-    if profile.get("role") != "household":
-        raise ValueError("Invalid account role.")
-
-    if profile.get("status") == "active" and profile.get("household_id"):
-        raise ValueError(
-            "This account is an active household member. Sign out and use a different Google account for operator access."
-        )
+    if profile_has_role(profile, "operator"):
+        return set_active_role(auth_user_id, "operator")
 
     now = _utc_now()
+    roles = _parse_roles(profile)
+    roles.append("operator")
+    roles_json = _serialize_roles(roles)
+
     with db_connection() as conn:
-        conn.execute(
-            """
-            UPDATE household_registrations SET
-                status = 'rejected',
-                rejection_reason = ?,
-                reviewed_at = ?,
-                updated_at = ?
-            WHERE applicant_user_id = ? AND status = 'pending'
-            """,
-            ("Account switched to barangay operator role", now, now, auth_user_id),
-        )
         conn.execute(
             """
             UPDATE user_profiles SET
                 role = 'operator',
-                status = 'active',
-                household_id = NULL,
-                has_solar = 0,
-                has_battery = 0,
-                battery_model = NULL,
-                battery_capacity_kwh = NULL,
+                roles = ?,
                 updated_at = ?
             WHERE id = ?
             """,
-            (now, auth_user_id),
+            (roles_json, now, auth_user_id),
         )
 
     updated = get_user_profile(auth_user_id)
     if not updated:
-        raise RuntimeError("Could not switch to operator.")
+        raise RuntimeError("Could not add operator access.")
+    return updated
+
+
+def set_active_role(auth_user_id: str, active_role: str) -> dict:
+    profile = get_user_profile(auth_user_id)
+    if not profile:
+        raise ValueError("Profile not found.")
+    if active_role not in ("operator", "household"):
+        raise ValueError("active_role must be operator or household")
+    if not profile_has_role(profile, active_role):
+        raise ValueError(f"This account does not have {active_role} access.")
+
+    now = _utc_now()
+    with db_connection() as conn:
+        conn.execute(
+            "UPDATE user_profiles SET role = ?, updated_at = ? WHERE id = ?",
+            (active_role, now, auth_user_id),
+        )
+
+    updated = get_user_profile(auth_user_id)
+    if not updated:
+        raise RuntimeError("Could not switch role.")
     return updated
 
 
@@ -1681,7 +1767,7 @@ def get_barangay_for_operator(operator_user_id: str) -> dict | None:
             return row
         profile = fetchone(
             conn,
-            "SELECT barangay_id FROM user_profiles WHERE id = ? AND role = 'operator'",
+            "SELECT barangay_id FROM user_profiles WHERE id = ?",
             (operator_user_id,),
         )
         if profile and profile.get("barangay_id"):
@@ -1897,13 +1983,21 @@ def register_barangay(
             dataset_suffix=f"b{barangay_id}",
         )
 
+        profile_row = fetchone(
+            conn,
+            "SELECT role, roles FROM user_profiles WHERE id = ?",
+            (operator_user_id,),
+        )
+        roles_json = _serialize_roles(
+            list(dict.fromkeys([*_parse_roles(profile_row or {}), "operator"]))
+        )
         conn.execute(
             """
             UPDATE user_profiles
-            SET barangay_id = ?, status = 'active', updated_at = ?
+            SET barangay_id = ?, role = 'operator', roles = ?, status = 'active', updated_at = ?
             WHERE id = ?
             """,
-            (barangay_id, now, operator_user_id),
+            (barangay_id, roles_json, now, operator_user_id),
         )
 
     bg = get_barangay(barangay_id)
@@ -2021,13 +2115,22 @@ def approve_registration(
             (household_id, reviewer_user_id, now, now, registration_id),
         )
 
+        profile_row = fetchone(
+            conn,
+            "SELECT role, roles FROM user_profiles WHERE id = ?",
+            (reg["applicant_user_id"],),
+        )
+        roles_json = _serialize_roles(
+            list(dict.fromkeys([*_parse_roles(profile_row or {}), "household"]))
+        )
+
         conn.execute(
             """
             UPDATE user_profiles SET
-                household_id = ?, barangay_id = ?, status = 'active', updated_at = ?
+                household_id = ?, barangay_id = ?, status = 'active', roles = ?, updated_at = ?
             WHERE id = ?
             """,
-            (household_id, barangay_id, now, reg["applicant_user_id"]),
+            (household_id, barangay_id, roles_json, now, reg["applicant_user_id"]),
         )
 
     updated = _get_registration(registration_id)

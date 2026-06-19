@@ -2,13 +2,33 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient';
 import { fetchMe } from '../services/authApi';
 
-export function getProfileRole(profile) {
-  if (!profile) return null;
+import { resolveActiveRole } from '../utils/activeRole';
+
+export function getProfileRoles(profile) {
+  if (!profile) return [];
+  if (Array.isArray(profile.roles) && profile.roles.length) {
+    return profile.roles.filter((r) => r === 'operator' || r === 'household');
+  }
   const role = String(profile.role ?? '').toLowerCase().trim();
-  return role === 'household' ? 'household' : 'operator';
+  if (role === 'household' || role === 'operator') return [role];
+  return [];
 }
 
-export function profileToUser(profile) {
+export function profileHasRole(profile, role) {
+  return getProfileRoles(profile).includes(role);
+}
+
+export function getProfileRole(profile, activeRole = null) {
+  if (!profile) return null;
+  const roles = getProfileRoles(profile);
+  if (activeRole && roles.includes(activeRole)) return activeRole;
+  const role = String(profile.role ?? '').toLowerCase().trim();
+  if (role === 'household' || role === 'operator') return role;
+  return roles[0] ?? 'operator';
+}
+
+export function profileToUser(profile, activeRole = null) {
+  const viewRole = getProfileRole(profile, activeRole ?? resolveActiveRole(profile));
   const name = profile.display_name ?? 'User';
   const initials =
     name
@@ -18,7 +38,7 @@ export function profileToUser(profile) {
       .map((part) => part[0]?.toUpperCase() ?? '')
       .join('') || 'U';
 
-  if (getProfileRole(profile) === 'household') {
+  if (viewRole === 'household') {
     return {
       role: 'household',
       name,
@@ -30,6 +50,7 @@ export function profileToUser(profile) {
       barangayName: profile.barangay_name,
       barangayCode: profile.barangay_code,
       rejectionReason: profile.rejection_reason ?? null,
+      roles: getProfileRoles(profile),
     };
   }
 
@@ -39,8 +60,9 @@ export function profileToUser(profile) {
     initials,
     roleLabel: 'Barangay Operator',
     profileId: profile.id,
-    barangayName: profile.barangay_name,
-    barangayCode: profile.barangay_code,
+    barangayName: profile.operator_barangay_name ?? profile.barangay_name,
+    barangayCode: profile.operator_barangay_code ?? profile.barangay_code,
+    roles: getProfileRoles(profile),
   };
 }
 

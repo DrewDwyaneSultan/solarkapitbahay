@@ -87,7 +87,20 @@ export async function switchToOperator(accessToken) {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail ?? 'Could not switch to operator.');
+    throw new Error(body.detail ?? 'Could not add operator access.');
+  }
+  return res.json();
+}
+
+export async function switchActiveRole(accessToken, role) {
+  const res = await fetchWithTimeout(`${API_BASE}/api/auth/switch-role`, {
+    method: 'POST',
+    headers: authHeaders(accessToken),
+    body: JSON.stringify({ role }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail ?? 'Could not switch role.');
   }
   return res.json();
 }

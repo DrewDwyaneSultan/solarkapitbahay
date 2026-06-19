@@ -15,6 +15,7 @@ export default function HouseholdStatusScreen({
   onLogout,
   onCheckStatus,
   onSwitchToOperator,
+  hasOperatorAccess = false,
   checking = false,
 }) {
   const isRejected = status === 'rejected';
@@ -85,10 +86,13 @@ export default function HouseholdStatusScreen({
               </button>
 
               <div className="mt-4 w-full text-left text-xs text-violet-950 bg-violet-50 border border-violet-200 rounded-lg px-4 py-3 space-y-2">
-                <p className="font-semibold">Are you the barangay operator?</p>
+                <p className="font-semibold">
+                  {hasOperatorAccess ? 'Switch to operator view' : 'Are you the barangay operator?'}
+                </p>
                 <p>
-                  If you meant to manage {barangayName ?? 'this barangay'}, you don’t need to wait
-                  for approval — switch to the operator dashboard and approve households from there.
+                  {hasOperatorAccess
+                    ? 'You can manage this barangay while your household request is pending — switch to the operator dashboard to approve registrations.'
+                    : `If you meant to manage ${barangayName ?? 'this barangay'}, add operator access and approve households from the dashboard.`}
                 </p>
                 <button
                   type="button"
@@ -96,7 +100,11 @@ export default function HouseholdStatusScreen({
                   onClick={handleOperatorSwitch}
                   className="w-full h-10 rounded-lg bg-violet-700 text-white text-sm font-semibold disabled:opacity-50"
                 >
-                  {switchBusy ? 'Opening operator dashboard…' : 'I’m the operator — open dashboard'}
+                  {switchBusy
+                    ? 'Switching…'
+                    : hasOperatorAccess
+                      ? 'Switch to operator dashboard'
+                      : 'Add operator access & open dashboard'}
                 </button>
               </div>
             </>

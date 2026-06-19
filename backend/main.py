@@ -39,6 +39,8 @@ from database import (
     update_operator_household,
     upsert_user_profile,
     switch_profile_to_operator,
+    set_active_role,
+    profile_has_role,
 )
 from auth import auth_configured, get_auth_user_id, get_token_email
 from notifications import (
@@ -146,8 +148,12 @@ def _require_profile(user_id: str = Depends(get_auth_user_id)) -> dict:
     return profile
 
 
+class SwitchRoleBody(BaseModel):
+    role: Literal["operator", "household"]
+
+
 def _require_operator(profile: dict = Depends(_require_profile)) -> dict:
-    if profile.get("role") != "operator":
+    if not profile_has_role(profile, "operator"):
         raise HTTPException(status_code=403, detail="Operator access required.")
     return profile
 
@@ -267,10 +273,23 @@ def auth_switch_to_operator(
     user_id: str = Depends(get_auth_user_id),
     email: str = Depends(get_token_email),
 ) -> dict:
-    """Convert a pending household sign-up into an operator account (same Google login)."""
+    """Add operator access to this Google account (same login can also be a household)."""
     ensure_app_db()
     try:
         return switch_profile_to_operator(user_id, email)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/auth/switch-role")
+def auth_switch_role(
+    body: SwitchRoleBody,
+    user_id: str = Depends(get_auth_user_id),
+) -> dict:
+    """Switch the active view between operator and household."""
+    ensure_app_db()
+    try:
+        return set_active_role(user_id, body.role)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -285,7 +304,7 @@ def barangay_lookup(code: str) -> dict:
 
 @router.get("/barangays/mine")
 def barangay_mine(profile: dict = Depends(_require_profile)) -> dict:
-    if profile.get("role") != "operator":
+    if not profile_has_role(profile, "operator"):
         raise HTTPException(status_code=403, detail="Operators only.")
     bg = get_barangay_for_operator(profile["id"])
     if not bg:

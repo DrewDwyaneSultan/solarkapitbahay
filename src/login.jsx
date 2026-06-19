@@ -511,6 +511,10 @@ export default function Login({
                 Step 2 — Sign in with Google
               </p>
 
+              <p className="text-[10px] text-sk-ink-muted text-center mb-4 leading-relaxed">
+                One Google account can hold both roles — use the switcher in the dashboard anytime.
+              </p>
+
               {session?.user && !needsProfile && (
                 <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mb-3">
                   Already signed in as <strong>{session.user.email}</strong>. Google may skip the

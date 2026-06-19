@@ -5,15 +5,27 @@ import HouseholdMemberApp from './pages/household/HouseholdMemberApp';
 import HouseholdStatusScreen from './pages/household/HouseholdStatusScreen';
 import BarangayOnboarding from './pages/BarangayOnboarding';
 import AccountRoleGate from './components/auth/AccountRoleGate';
-import { useAuth, profileToUser, getProfileRole } from './hooks/useAuth';
+import {
+  useAuth,
+  profileToUser,
+  getProfileRole,
+  getProfileRoles,
+  profileHasRole,
+} from './hooks/useAuth';
 import { fetchMyBarangay } from './services/registrationApi';
-import { switchToOperator } from './services/authApi';
+import { switchToOperator, switchActiveRole } from './services/authApi';
 import {
   clearIntendedRole,
   consumeIntendedRoleFromUrl,
   persistIntendedRole,
   readIntendedRole,
 } from './utils/intendedRole';
+import {
+  clearActiveRole,
+  persistActiveRole,
+  readActiveRole,
+  resolveActiveRole,
+} from './utils/activeRole';
 
 function LoadingScreen({ message = 'Loading…' }) {
   return (
@@ -26,8 +38,11 @@ function LoadingScreen({ message = 'Loading…' }) {
 function HouseholdRoutes({
   householdUser,
   accessToken,
+  profileRoles,
+  activeRole,
   onLogout,
   onCheckStatus,
+  onSwitchRole,
   onSwitchToOperator,
   checking,
 }) {
@@ -40,7 +55,8 @@ function HouseholdRoutes({
         rejectionReason={householdUser.rejectionReason}
         onLogout={onLogout}
         onCheckStatus={onCheckStatus}
-        onSwitchToOperator={onSwitchToOperator}
+        onSwitchToOperator={onSwitchToOperator ?? (() => onSwitchRole?.('operator'))}
+        hasOperatorAccess={profileRoles?.includes('operator')}
         checking={checking}
       />
     );
@@ -56,6 +72,9 @@ function HouseholdRoutes({
         name: householdUser.barangayName ?? 'Barangay',
         householdCode: householdUser.house ?? 'household_code',
       }}
+      profileRoles={profileRoles}
+      activeRole={activeRole}
+      onSwitchRole={onSwitchRole}
       onLogout={onLogout}
     />
   );
@@ -67,7 +86,9 @@ function App() {
   const [operatorBarangay, setOperatorBarangay] = useState(null);
   const [barangayCheckDone, setBarangayCheckDone] = useState(false);
   const [intendedRole, setIntendedRole] = useState(null);
+  const [activeRole, setActiveRole] = useState(null);
   const [statusChecking, setStatusChecking] = useState(false);
+  const [addingHousehold, setAddingHousehold] = useState(false);
 
   useEffect(() => {
     const fromOAuth = consumeIntendedRoleFromUrl();
@@ -79,17 +100,31 @@ function App() {
     if (stored) setIntendedRole(stored);
   }, []);
 
+  useEffect(() => {
+    if (!auth.profile) return;
+    const resolved = resolveActiveRole(auth.profile, intendedRole ?? readIntendedRole());
+    setActiveRole(resolved);
+    persistActiveRole(resolved);
+  }, [auth.profile, intendedRole]);
+
+  const profileRoles = auth.profile ? getProfileRoles(auth.profile) : [];
+  const effectiveIntended = intendedRole ?? readIntendedRole();
+  const viewRole = activeRole ?? (auth.profile ? resolveActiveRole(auth.profile, effectiveIntended) : null);
+
   const handleLogout = async () => {
     await auth.signOut();
     setDemoUser(null);
     setOperatorBarangay(null);
     setBarangayCheckDone(false);
     clearIntendedRole();
+    clearActiveRole();
     setIntendedRole(null);
+    setActiveRole(null);
+    setAddingHousehold(false);
   };
 
   const refreshOperatorBarangay = useCallback(async () => {
-    if (!auth.session?.access_token || getProfileRole(auth.profile) !== 'operator') {
+    if (!auth.session?.access_token || !profileHasRole(auth.profile, 'operator')) {
       setBarangayCheckDone(true);
       return;
     }
@@ -103,16 +138,40 @@ function App() {
     }
   }, [auth.session?.access_token, auth.profile]);
 
+  const handleRoleSwitch = useCallback(
+    async (newRole) => {
+      persistActiveRole(newRole);
+      setActiveRole(newRole);
+      clearIntendedRole();
+      setIntendedRole(null);
+
+      if (auth.session?.access_token && profileHasRole(auth.profile, newRole)) {
+        try {
+          const updated = await switchActiveRole(auth.session.access_token, newRole);
+          auth.setProfileFromSave(updated);
+        } catch {
+          /* client-side switch is enough for UI */
+        }
+      }
+
+      if (newRole === 'operator') {
+        setBarangayCheckDone(false);
+        await refreshOperatorBarangay();
+      }
+    },
+    [auth.session?.access_token, auth.profile, auth.setProfileFromSave, refreshOperatorBarangay],
+  );
+
   const handleSwitchToOperator = useCallback(async () => {
     if (!auth.session?.access_token) return;
+    if (profileHasRole(auth.profile, 'operator')) {
+      await handleRoleSwitch('operator');
+      return;
+    }
     const updated = await switchToOperator(auth.session.access_token);
     auth.setProfileFromSave(updated);
-    clearIntendedRole();
-    persistIntendedRole('operator');
-    setIntendedRole('operator');
-    setBarangayCheckDone(false);
-    await refreshOperatorBarangay();
-  }, [auth.session?.access_token, auth.setProfileFromSave, refreshOperatorBarangay]);
+    await handleRoleSwitch('operator');
+  }, [auth.session?.access_token, auth.profile, auth.setProfileFromSave, handleRoleSwitch]);
 
   const handleCheckApprovalStatus = useCallback(async () => {
     if (!auth.session?.access_token) return;
@@ -127,8 +186,7 @@ function App() {
   useEffect(() => {
     if (auth.loading) return;
 
-    const isOperator =
-      getProfileRole(auth.profile) === 'operator' && auth.supabaseEnabled && auth.session;
+    const isOperator = profileHasRole(auth.profile, 'operator') && auth.supabaseEnabled && auth.session;
 
     if (!isOperator) {
       setBarangayCheckDone(true);
@@ -165,32 +223,38 @@ function App() {
     return <LoadingScreen />;
   }
 
-  const profileRole = auth.profile ? getProfileRole(auth.profile) : null;
-  const effectiveIntended = intendedRole ?? readIntendedRole();
   const wantsHousehold = effectiveIntended === 'household';
   const wantsOperator = effectiveIntended === 'operator';
 
-  const roleConflict =
+  const missingIntendedRole =
     auth.session &&
     auth.profile &&
-    ((wantsOperator && profileRole === 'household') || (wantsHousehold && profileRole === 'operator'));
+    effectiveIntended &&
+    ((wantsOperator && !profileHasRole(auth.profile, 'operator')) ||
+      (wantsHousehold && !profileHasRole(auth.profile, 'household')));
 
-  if (roleConflict) {
+  if (missingIntendedRole && !addingHousehold) {
     return (
       <AccountRoleGate
         profile={auth.profile}
         intendedRole={wantsHousehold ? 'household' : 'operator'}
         accessToken={auth.session.access_token}
-        onResolved={(saved) => {
+        onAddHousehold={() => {
+          setAddingHousehold(true);
+          persistIntendedRole('household');
+          setIntendedRole('household');
+        }}
+        onResolved={(saved, role) => {
           auth.setProfileFromSave(saved);
-          if (getProfileRole(saved) === 'operator') {
-            persistIntendedRole('operator');
-            setIntendedRole('operator');
+          if (role) {
+            persistActiveRole(role);
+            setActiveRole(role);
+          }
+          clearIntendedRole();
+          setIntendedRole(null);
+          if (role === 'operator') {
             setBarangayCheckDone(false);
             refreshOperatorBarangay();
-          } else {
-            clearIntendedRole();
-            setIntendedRole(null);
           }
         }}
         onLogout={handleLogout}
@@ -200,11 +264,14 @@ function App() {
 
   const needsHouseholdSetup =
     Boolean(auth.session) &&
-    wantsHousehold &&
-    (auth.needsProfile || !auth.profile || profileRole !== 'household');
+    (addingHousehold || wantsHousehold) &&
+    (auth.needsProfile || !auth.profile || !profileHasRole(auth.profile, 'household'));
 
   const needsOperatorProfile =
-    Boolean(auth.session) && auth.needsProfile && (wantsOperator || !wantsHousehold);
+    Boolean(auth.session) &&
+    auth.needsProfile &&
+    (wantsOperator || !wantsHousehold) &&
+    !profileHasRole(auth.profile, 'household');
 
   if ((needsHouseholdSetup || needsOperatorProfile) && auth.session) {
     return (
@@ -212,9 +279,10 @@ function App() {
         needsProfile
         session={auth.session}
         supabaseEnabled={auth.supabaseEnabled}
-        defaultRole={wantsHousehold ? 'household' : 'operator'}
-        forceHousehold={wantsHousehold}
+        defaultRole={wantsHousehold || addingHousehold ? 'household' : 'operator'}
+        forceHousehold={wantsHousehold || addingHousehold}
         onSwitchToOperator={() => {
+          setAddingHousehold(false);
           clearIntendedRole();
           setIntendedRole('operator');
           persistIntendedRole('operator');
@@ -222,6 +290,10 @@ function App() {
         onProfileComplete={(saved) => {
           auth.setProfileFromSave(saved);
           setDemoUser(null);
+          setAddingHousehold(false);
+          const nextRole = getProfileRole(saved, wantsHousehold ? 'household' : 'operator');
+          persistActiveRole(nextRole);
+          setActiveRole(nextRole);
           clearIntendedRole();
           setIntendedRole(null);
         }}
@@ -230,95 +302,91 @@ function App() {
     );
   }
 
-  if (auth.session && auth.profile && profileRole === 'household') {
+  if (auth.session && auth.profile && viewRole === 'household' && profileHasRole(auth.profile, 'household')) {
     return (
       <HouseholdRoutes
-        householdUser={profileToUser(auth.profile)}
+        householdUser={profileToUser(auth.profile, 'household')}
         accessToken={auth.session.access_token}
+        profileRoles={profileRoles}
+        activeRole={viewRole}
         onLogout={handleLogout}
         onCheckStatus={handleCheckApprovalStatus}
+        onSwitchRole={handleRoleSwitch}
         onSwitchToOperator={handleSwitchToOperator}
         checking={statusChecking}
       />
     );
   }
 
-  const activeUser = demoUser ?? auth.user;
+  if (!auth.session && !demoUser) {
+    return (
+      <Login
+        supabaseEnabled={auth.supabaseEnabled}
+        onIntendedRoleChange={(role) => {
+          setIntendedRole(role);
+          persistIntendedRole(role);
+        }}
+        onSignIn={({ user }) => {
+          if (user?.role === 'household') setDemoUser(user);
+          else setDemoUser(null);
+        }}
+        onProfileComplete={(saved) => auth.setProfileFromSave(saved)}
+      />
+    );
+  }
 
-  if (!activeUser) {
-    if (auth.session && auth.authError) {
-      return (
-        <div className="min-h-screen bg-sk-canvas flex items-center justify-center p-6">
-          <div className="max-w-md w-full rounded-2xl border border-amber-200 bg-white p-8 shadow-lg">
-            <h2 className="font-serif text-xl font-semibold text-sk-ink mb-2">Signed in, but app setup incomplete</h2>
-            <p className="text-sm text-sk-ink-muted mb-4">
-              Google login worked (your account is in Supabase), but the backend could not verify your session.
-            </p>
-            <p className="text-sm text-rose-800 bg-rose-50 border border-rose-200 rounded-md px-3 py-2 mb-4">
-              {auth.authError}
-            </p>
-            <button
-              type="button"
-              onClick={() => auth.refreshProfile(auth.session.access_token)}
-              className="w-full h-10 rounded-md bg-sk-accent text-white text-sm font-semibold mb-2"
-            >
-              Retry
-            </button>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="w-full h-10 rounded-md border border-sk-card-border/70 text-sm font-semibold"
-            >
-              Sign out
-            </button>
-          </div>
+  if (auth.session && auth.authError && !auth.profile) {
+    return (
+      <div className="min-h-screen bg-sk-canvas flex items-center justify-center p-6">
+        <div className="max-w-md w-full rounded-2xl border border-amber-200 bg-white p-8 shadow-lg">
+          <h2 className="font-serif text-xl font-semibold text-sk-ink mb-2">Signed in, but app setup incomplete</h2>
+          <p className="text-sm text-rose-800 bg-rose-50 border border-rose-200 rounded-md px-3 py-2 mb-4">
+            {auth.authError}
+          </p>
+          <button
+            type="button"
+            onClick={() => auth.refreshProfile(auth.session.access_token)}
+            className="w-full h-10 rounded-md bg-sk-accent text-white text-sm font-semibold mb-2"
+          >
+            Retry
+          </button>
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="w-full h-10 rounded-md border border-sk-card-border/70 text-sm font-semibold"
+          >
+            Sign out
+          </button>
         </div>
-      );
-    }
+      </div>
+    );
+  }
 
-    if (!auth.session) {
-      return (
-        <Login
-          supabaseEnabled={auth.supabaseEnabled}
-          onIntendedRoleChange={(role) => {
-            setIntendedRole(role);
-            persistIntendedRole(role);
-          }}
-          onSignIn={({ user, session }) => {
-            if (user?.role === 'household') {
-              setDemoUser(user);
-              return;
-            }
-            setDemoUser(null);
-            if (session && auth.profile && getProfileRole(auth.profile) === 'operator') {
-              setDemoUser(profileToUser(auth.profile));
-            }
-          }}
-          onProfileComplete={(saved) => auth.setProfileFromSave(saved)}
-        />
-      );
-    }
+  const activeUser = demoUser ?? (auth.profile ? profileToUser(auth.profile, viewRole ?? 'operator') : null);
 
+  if (!activeUser && auth.session && !auth.profile && !auth.authError) {
     return <LoadingScreen message="Setting up your session…" />;
   }
 
   if (demoUser?.role === 'household') {
-    return <HouseholdRoutes householdUser={demoUser} onLogout={handleLogout} />;
+    return <HouseholdRoutes householdUser={demoUser} onLogout={handleLogout} onSwitchRole={handleRoleSwitch} />;
   }
 
   if (
-    profileRole === 'operator' &&
+    profileHasRole(auth.profile, 'operator') &&
     auth.supabaseEnabled &&
     auth.session &&
     !demoUser &&
+    viewRole === 'operator' &&
     barangayCheckDone &&
     !operatorBarangay &&
-    !auth.profile?.barangay_id
+    !auth.profile?.barangay_id &&
+    !auth.profile?.operator_barangay_code
   ) {
     return (
       <BarangayOnboarding
         accessToken={auth.session.access_token}
-        operatorName={activeUser.name}
+        operatorName={activeUser?.name}
         onComplete={async () => {
           await auth.refreshProfile(auth.session.access_token);
           await refreshOperatorBarangay();
@@ -328,19 +396,29 @@ function App() {
   }
 
   const barangayName =
-    operatorBarangay?.name ?? auth.profile?.barangay_name ?? 'Barangay Mabini';
-  const barangayCode = operatorBarangay?.barangay_code ?? auth.profile?.barangay_code ?? null;
+    operatorBarangay?.name ??
+    auth.profile?.operator_barangay_name ??
+    auth.profile?.barangay_name ??
+    'Barangay Mabini';
+  const barangayCode =
+    operatorBarangay?.barangay_code ??
+    auth.profile?.operator_barangay_code ??
+    auth.profile?.barangay_code ??
+    null;
 
   return (
     <OperatorDashboard
       operator={{
-        initials: activeUser.initials ?? 'JU',
-        name: activeUser.name ?? 'Operator',
-        role: activeUser.roleLabel ?? 'Barangay Operator',
+        initials: activeUser?.initials ?? 'JU',
+        name: activeUser?.name ?? 'Operator',
+        role: activeUser?.roleLabel ?? 'Barangay Operator',
       }}
       barangayName={barangayName}
       barangayCode={barangayCode}
       accessToken={auth.session?.access_token ?? null}
+      profileRoles={profileRoles}
+      activeRole={viewRole ?? 'operator'}
+      onSwitchRole={handleRoleSwitch}
       onLogout={handleLogout}
     />
   );

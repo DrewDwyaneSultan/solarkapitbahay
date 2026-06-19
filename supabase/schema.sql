@@ -155,6 +155,11 @@ ALTER TABLE households ADD COLUMN IF NOT EXISTS cluster_action TEXT
     CHECK (cluster_action IS NULL OR cluster_action IN ('charge','discharge','balanced'));
 
 ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS barangay_id INTEGER REFERENCES barangays(id) ON DELETE SET NULL;
+ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS roles TEXT;
+
+UPDATE user_profiles
+SET roles = json_build_array(role)::text
+WHERE roles IS NULL OR roles = '';
 
 CREATE INDEX IF NOT EXISTS idx_user_profiles_role ON user_profiles(role);
 CREATE INDEX IF NOT EXISTS idx_user_profiles_barangay ON user_profiles(barangay_id);

@@ -2,30 +2,26 @@ import React, { useState } from 'react';
 import BrandLogo from '../BrandLogo';
 import { switchToOperator } from '../../services/authApi';
 import { clearIntendedRole, persistIntendedRole } from '../../utils/intendedRole';
+import { getProfileRoles, profileHasRole } from '../../hooks/useAuth';
 
 export default function AccountRoleGate({
   profile,
   intendedRole,
   accessToken,
   onResolved,
+  onAddHousehold,
   onLogout,
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  const savedRole = profile?.role === 'household' ? 'household' : 'operator';
+  const roles = getProfileRoles(profile);
   const wantsOperator = intendedRole === 'operator';
-  const canSwitchToOperator =
-    savedRole === 'household' &&
-    wantsOperator &&
-    profile?.status !== 'active';
+  const wantsHousehold = intendedRole === 'household';
+  const hasOperator = profileHasRole(profile, 'operator');
+  const hasHousehold = profileHasRole(profile, 'household');
 
-  const continueAsSaved = () => {
-    clearIntendedRole();
-    onResolved?.(profile);
-  };
-
-  const handleSwitchToOperator = async () => {
+  const handleAddOperator = async () => {
     if (!accessToken) return;
     setBusy(true);
     setError('');
@@ -33,9 +29,9 @@ export default function AccountRoleGate({
       const updated = await switchToOperator(accessToken);
       clearIntendedRole();
       persistIntendedRole('operator');
-      onResolved?.(updated);
+      onResolved?.(updated, 'operator');
     } catch (err) {
-      setError(err.message ?? 'Could not switch to operator.');
+      setError(err.message ?? 'Could not add operator access.');
     } finally {
       setBusy(false);
     }
@@ -46,12 +42,18 @@ export default function AccountRoleGate({
       <div className="w-full max-w-lg rounded-2xl border border-sk-card-border/50 bg-white p-8 shadow-lg">
         <div className="flex flex-col items-center text-center">
           <BrandLogo circleBg circleBgSize={96} />
-          <h2 className="font-serif text-2xl font-semibold text-sk-ink mt-5">Choose how to continue</h2>
+          <h2 className="font-serif text-2xl font-semibold text-sk-ink mt-5">Add access to your account</h2>
           <p className="text-sm text-sk-ink-muted mt-3 leading-relaxed">
-            This Google account is registered as{' '}
-            <strong>{savedRole === 'operator' ? 'Barangay Operator' : 'Household Member'}</strong>
-            {profile?.status === 'pending' ? ' (pending approval)' : ''}, but you signed in as{' '}
-            <strong>{wantsOperator ? 'Operator' : 'Household'}</strong>.
+            This Google account currently has{' '}
+            <strong>
+              {roles.length === 2
+                ? 'both roles'
+                : hasOperator
+                  ? 'operator access'
+                  : 'household access'}
+            </strong>
+            . You signed in to set up{' '}
+            <strong>{wantsOperator ? 'operator' : 'household'}</strong> access.
           </p>
 
           {error && (
@@ -61,62 +63,39 @@ export default function AccountRoleGate({
           )}
 
           <div className="mt-6 w-full space-y-3">
-            {canSwitchToOperator && (
+            {wantsOperator && !hasOperator && (
               <button
                 type="button"
                 disabled={busy}
-                onClick={handleSwitchToOperator}
+                onClick={handleAddOperator}
                 className="w-full h-11 rounded-lg bg-sk-run text-white text-sm font-semibold disabled:opacity-50"
               >
-                {busy ? 'Switching…' : 'Use Operator dashboard (recommended)'}
+                {busy ? 'Adding operator access…' : 'Add operator access to this account'}
               </button>
             )}
-            {savedRole === 'operator' && wantsOperator && (
+            {wantsHousehold && !hasHousehold && (
               <button
                 type="button"
                 disabled={busy}
-                onClick={continueAsSaved}
-                className="w-full h-11 rounded-lg bg-sk-run text-white text-sm font-semibold"
+                onClick={() => onAddHousehold?.()}
+                className="w-full h-11 rounded-lg bg-sk-run text-white text-sm font-semibold disabled:opacity-50"
               >
-                Continue to Operator dashboard
+                Set up household access
               </button>
             )}
-            {savedRole === 'household' && !wantsOperator && (
+            {(hasOperator && wantsHousehold) || (hasHousehold && wantsOperator) ? (
               <button
                 type="button"
                 disabled={busy}
-                onClick={continueAsSaved}
-                className="w-full h-11 rounded-lg bg-sk-run text-white text-sm font-semibold"
+                onClick={() => {
+                  clearIntendedRole();
+                  onResolved?.(profile, hasOperator && wantsOperator ? 'operator' : 'household');
+                }}
+                className="w-full h-11 rounded-lg border border-sk-card-border/60 text-sm font-semibold"
               >
-                Continue as Household
+                Continue with existing access
               </button>
-            )}
-            {savedRole === 'household' && wantsOperator && canSwitchToOperator && (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={continueAsSaved}
-                className="w-full h-11 rounded-lg border border-sk-card-border/60 text-sm font-semibold disabled:opacity-50"
-              >
-                Continue waiting as Household
-              </button>
-            )}
-            {savedRole === 'household' && wantsOperator && !canSwitchToOperator && (
-              <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-                This household account is already active. Use another Google account for operator
-                access.
-              </p>
-            )}
-            {savedRole === 'operator' && !wantsOperator && (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={continueAsSaved}
-                className="w-full h-11 rounded-lg bg-emerald-700 text-white text-sm font-semibold"
-              >
-                Continue to Operator dashboard
-              </button>
-            )}
+            ) : null}
             <button
               type="button"
               disabled={busy}
