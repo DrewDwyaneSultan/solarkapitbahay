@@ -8,6 +8,7 @@ import { useLiveData } from '../hooks/useLiveData';
 import { CIRCUIT_HOUSES, resolveCircuit } from '../constants/circuits';
 import {
   approveRegistration,
+  createHousehold,
   fetchHouseholdsByBarangay,
   fetchRegistrations,
   rejectRegistration,
@@ -34,6 +35,14 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
   const [toast, setToast] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addForm, setAddForm] = useState({
+    headName: '',
+    address: '',
+    purok: '',
+    hasSolar: false,
+    hasBattery: false,
+  });
 
   const loadData = async () => {
     if (!accessToken) return;
@@ -134,6 +143,29 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
     }
   };
 
+  const submitAddHousehold = async (e) => {
+    e.preventDefault();
+    if (!accessToken || !addForm.headName.trim()) return;
+    setBusy(true);
+    try {
+      const created = await createHousehold(accessToken, {
+        head_name: addForm.headName.trim(),
+        address: addForm.address.trim() || null,
+        purok: addForm.purok.trim() || null,
+        has_solar: addForm.hasSolar,
+        has_battery: addForm.hasBattery,
+      });
+      setAddForm({ headName: '', address: '', purok: '', hasSolar: false, hasBattery: false });
+      setShowAddForm(false);
+      notify(`Added ${created.head_name ?? addForm.headName} (${created.id}).`);
+      await loadData();
+    } catch (err) {
+      notify(err.message ?? 'Could not add household.', 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (!accessToken) {
     return (
       <div className="space-y-4">
@@ -192,12 +224,99 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
                   {h?.voltage?.toFixed?.(1) ?? '—'} V · {h?.current?.toFixed?.(2) ?? '—'} A · {h?.solar ?? 0} W
                 </p>
                 <p className="text-xs text-sk-ink-muted mt-1">
-                  Transfer: {h?.transfer ?? '—'} · Relay: {h?.relay ? 'ON' : 'OFF'}
+                  Transfer: {h?.transfer ?? '—'} · Relay:{' '}
+                  {!h?.online ? '—' : h?.relay ? 'ON' : 'OFF'}
                 </p>
               </div>
             );
           })}
         </div>
+      </Card>
+
+      <Card title="Add Household" className="mb-6">
+        <p className="text-xs text-sk-ink-muted mb-3">
+          Manually register a home in your barangay. They receive a household code to claim during
+          sign-up. Virtual hub homes from onboarding are listed below; use this for extra homes.
+        </p>
+        {!showAddForm ? (
+          <button
+            type="button"
+            onClick={() => setShowAddForm(true)}
+            className="h-10 px-4 rounded-lg bg-sk-accent text-white text-sm font-semibold hover:opacity-90"
+          >
+            + Add household
+          </button>
+        ) : (
+          <form onSubmit={submitAddHousehold} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-widest text-sk-ink-muted mb-1.5">
+                Head of household *
+              </label>
+              <input
+                required
+                value={addForm.headName}
+                onChange={(e) => setAddForm((f) => ({ ...f, headName: e.target.value }))}
+                className="w-full h-10 rounded-md border border-sk-card-border/60 bg-white px-3 text-sm"
+                placeholder="e.g. Maria Santos"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-widest text-sk-ink-muted mb-1.5">
+                Purok / zone
+              </label>
+              <input
+                value={addForm.purok}
+                onChange={(e) => setAddForm((f) => ({ ...f, purok: e.target.value }))}
+                className="w-full h-10 rounded-md border border-sk-card-border/60 bg-white px-3 text-sm"
+                placeholder="Purok 3"
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-[10px] font-bold uppercase tracking-widest text-sk-ink-muted mb-1.5">
+                Address
+              </label>
+              <input
+                value={addForm.address}
+                onChange={(e) => setAddForm((f) => ({ ...f, address: e.target.value }))}
+                className="w-full h-10 rounded-md border border-sk-card-border/60 bg-white px-3 text-sm"
+                placeholder="Street / sitio"
+              />
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={addForm.hasSolar}
+                onChange={(e) => setAddForm((f) => ({ ...f, hasSolar: e.target.checked }))}
+              />
+              Has solar
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={addForm.hasBattery}
+                onChange={(e) => setAddForm((f) => ({ ...f, hasBattery: e.target.checked }))}
+              />
+              Has battery
+            </label>
+            <div className="md:col-span-2 flex gap-2">
+              <button
+                type="submit"
+                disabled={busy}
+                className="h-10 px-4 rounded-lg bg-sk-accent text-white text-sm font-semibold disabled:opacity-50"
+              >
+                Save household
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setShowAddForm(false)}
+                className="h-10 px-4 rounded-lg border border-sk-card-border/60 bg-white text-sm font-semibold"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
       </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] gap-6">
@@ -385,7 +504,10 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
                       value={`${selectedLive.voltage?.toFixed?.(1) ?? '—'} V · ${selectedLive.current?.toFixed?.(2) ?? '—'} A`}
                     />
                     <DetailRow label="Transfer" value={selectedLive.transfer} />
-                    <DetailRow label="Relay" value={selectedLive.relay ? 'ON' : 'OFF'} />
+                    <DetailRow
+                      label="Relay"
+                      value={!selectedLive.online ? '—' : selectedLive.relay ? 'ON' : 'OFF'}
+                    />
                   </>
                 )}
                 {actionById[selected.id] && (

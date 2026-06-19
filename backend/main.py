@@ -18,6 +18,7 @@ from live_clustering import run_live_clustering
 from config import SIM_DAYS_DEFAULT
 from database import (
     approve_registration,
+    create_operator_household,
     db_status,
     get_active_dataset,
     get_barangay_for_operator,
@@ -98,6 +99,14 @@ class BarangayRegisterRequest(BaseModel):
 
 class RegistrationRejectRequest(BaseModel):
     reason: str | None = Field(default=None, max_length=500)
+
+
+class HouseholdCreateRequest(BaseModel):
+    head_name: str = Field(min_length=2, max_length=120)
+    address: str | None = Field(default=None, max_length=300)
+    purok: str | None = Field(default=None, max_length=120)
+    has_solar: bool = False
+    has_battery: bool = False
 
 
 class MqttIngestBody(BaseModel):
@@ -376,14 +385,19 @@ def simulation_run_detail(run_id: int) -> dict:
 
 
 @router.get("/clustering")
-def clustering_overview(include_live: bool = True) -> dict:
+def clustering_overview(include_live: bool = False) -> dict:
     """K-means on merged CSV — charge/discharge indicators for all households."""
     data = run_clustering()
     if include_live:
-        live = run_live_clustering()
-        data["live_households"] = live["households"]
-        data["live_summary"] = live["summary"]
-        data["live_mqtt"] = live.get("mqtt")
+        try:
+            live = run_live_clustering()
+            data["live_households"] = live["households"]
+            data["live_summary"] = live["summary"]
+            data["live_mqtt"] = live.get("mqtt")
+        except Exception:
+            data["live_households"] = []
+            data["live_summary"] = {}
+            data["live_mqtt"] = None
     return data
 
 
@@ -414,6 +428,24 @@ def households_list(barangay_code: str | None = None, claimable_only: bool = Fal
         barangay_id = int(bg["id"])
     rows = list_households(barangay_id=barangay_id, claimable_only=claimable_only)
     return {"households": rows, "count": len(rows)}
+
+
+@router.post("/households")
+def household_create(
+    body: HouseholdCreateRequest,
+    barangay: dict = Depends(_operator_barangay),
+) -> dict:
+    """Operator: manually register a household in their barangay."""
+    row = create_operator_household(
+        int(barangay["id"]),
+        str(barangay["barangay_code"]),
+        body.head_name,
+        address=body.address,
+        purok=body.purok,
+        has_solar=body.has_solar,
+        has_battery=body.has_battery,
+    )
+    return row
 
 
 @router.get("/households/{household_id}")

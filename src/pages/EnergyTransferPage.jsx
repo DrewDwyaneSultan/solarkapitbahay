@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Card from '../components/ui/Card';
 import Toggle from '../components/ui/Toggle';
+import LiveStatusBadge from '../components/ui/LiveStatusBadge';
 import { SunLogoIcon } from '../components/icons/NavIcons';
 import TransferAnimationOverlay from '../components/energy/TransferAnimationOverlay';
 import { getHouseCards, useLiveData } from '../hooks/useLiveData';
-import { initialAutomationLog } from '../constants/energyTransfer';
+import { isTransferActive } from '../utils/liveStatus';
 
 function fmtCountdown(sec) {
   const m = Math.floor(sec / 60);
@@ -23,9 +24,38 @@ export default function EnergyTransferPage() {
     { id: 1, house: 'House B', need: 150, amount: 80 },
   ]);
   const [scanning, setScanning] = useState(false);
-  const [txHistory, setTxHistory] = useState([]);
-  const [txLog] = useState(initialAutomationLog);
   const [showTransferAnim, setShowTransferAnim] = useState(false);
+
+  const txHistory = liveData.transferLog ?? [];
+
+  const automationLog = useMemo(() => {
+    const rows = [];
+    for (const t of txHistory.slice(0, 8)) {
+      rows.push({
+        time: t.time,
+        decision: `${t.from} → ${t.to} (${t.kw} kW)`,
+        soc: `${Math.round(liveData.battery)}%`,
+        reason: t.status || 'MQTT transfer',
+      });
+    }
+    if (liveData.houseA?.transfer && isTransferActive(liveData.houseA.transfer)) {
+      rows.unshift({
+        time: 'Now',
+        decision: `House A · ${liveData.houseA.transfer}`,
+        soc: `${Math.round(liveData.battery)}%`,
+        reason: `${liveData.houseA.status} · ${liveData.houseA.voltage?.toFixed?.(1)} V`,
+      });
+    }
+    if (liveData.houseB?.transfer && isTransferActive(liveData.houseB.transfer)) {
+      rows.unshift({
+        time: 'Now',
+        decision: `House B · ${liveData.houseB.transfer}`,
+        soc: `${Math.round(liveData.battery)}%`,
+        reason: `${liveData.houseB.status} · ${liveData.houseB.voltage?.toFixed?.(1)} V`,
+      });
+    }
+    return rows;
+  }, [txHistory, liveData]);
 
   useEffect(() => {
     const id = setInterval(() => setCountdown((c) => (c <= 0 ? 300 : c - 1)), 1000);
@@ -34,13 +64,6 @@ export default function EnergyTransferPage() {
 
   const surplusSources = liveData.surplusSources ?? [];
   const devices = liveData.devices?.length ? liveData.devices : [];
-  const mqttLive = liveData.mqttConnected;
-
-  useEffect(() => {
-    if (liveData.transferLog?.length) {
-      setTxHistory(liveData.transferLog);
-    }
-  }, [liveData.transferLog]);
 
   const selectedSurplus = surplusSources.find((s) => s.value === fromHouse)?.surplus ?? 0;
   const totalSending = recipients.reduce((sum, r) => sum + r.amount, 0);
@@ -61,17 +84,6 @@ export default function EnergyTransferPage() {
 
   const onTransferComplete = () => {
     setShowTransferAnim(false);
-    const first = recipients[0];
-    setTxHistory((h) => [
-      {
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        from: fromHouse,
-        to: first?.house ?? 'House B',
-        kw: (totalSending / 1000).toFixed(2),
-        status: 'Success',
-      },
-      ...h,
-    ]);
     setCountdown(300);
   };
 
@@ -95,23 +107,18 @@ export default function EnergyTransferPage() {
           <ModeTab id="manual" label="Manual Override" active={mode === 'manual'} onClick={() => setMode('manual')} tone="amber" />
         </div>
 
-        <div className="flex items-center gap-2 text-xs">
-          <span className={`w-2 h-2 rounded-full ${mqttLive ? 'bg-emerald-600 animate-pulse' : 'bg-amber-500'}`} />
-          <span className="text-sk-ink-muted">
-            {mqttLive ? 'Live MQTT · solar/A & solar/B' : 'Mock data — start backend + ESP32s for live readings'}
-          </span>
-        </div>
+        <LiveStatusBadge data={liveData} />
 
         <Card title="Live Snapshot">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {[
-              { label: 'House A Solar', val: liveData.houseA.solar, unit: 'W', icon: '☀️' },
-              { label: 'House B Solar', val: liveData.houseB.solar, unit: 'W', icon: '☀️' },
-              { label: 'Battery SOC', val: Math.round(liveData.battery), unit: '%', icon: '🔋' },
+              { label: 'House A Solar', val: liveData.houseA.solar, unit: 'W', sub: `${liveData.houseA.voltage?.toFixed?.(1) ?? '—'} V · ${liveData.houseA.current?.toFixed?.(2) ?? '—'} A` },
+              { label: 'House B Solar', val: liveData.houseB.solar, unit: 'W', sub: `${liveData.houseB.voltage?.toFixed?.(1) ?? '—'} V · ${liveData.houseB.current?.toFixed?.(2) ?? '—'} A` },
+              { label: 'Battery SOC', val: Math.round(liveData.battery), unit: '%', sub: liveData.batteryStatus },
+              { label: 'Battery V', val: liveData.batteryVoltage?.toFixed?.(2) ?? '—', unit: 'V', sub: 'Community 18650' },
             ].map((row) => (
               <div key={row.label} className="rounded-xl border border-sk-card-border/40 bg-white/70 p-3">
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="text-lg">{row.icon}</span>
                   <SunLogoIcon className="w-4 h-4 text-amber-500 opacity-80" />
                   <span className="text-[10px] font-bold uppercase tracking-widest text-sk-ink-muted">{row.label}</span>
                 </div>
@@ -119,6 +126,7 @@ export default function EnergyTransferPage() {
                   {row.val}
                   <span className="text-sm font-medium text-sk-ink-muted ml-1">{row.unit}</span>
                 </p>
+                <p className="text-[10px] text-sk-ink-muted mt-1 font-semibold uppercase">{row.sub}</p>
               </div>
             ))}
           </div>
@@ -152,25 +160,64 @@ export default function EnergyTransferPage() {
                   ))}
                 </ul>
                 <button type="button" onClick={() => setShowAutoLog((v) => !v)} className="mt-3 w-full h-8 rounded-md border border-emerald-300 text-xs font-semibold">
-                  {showAutoLog ? 'Hide' : 'View'} Automation Log
+                  {showAutoLog ? 'Hide' : 'View'} Live Activity Log
                 </button>
+                {showAutoLog && (
+                  <ul className="mt-3 space-y-2 text-xs max-h-40 overflow-y-auto">
+                    {automationLog.length === 0 ? (
+                      <li className="text-sk-ink-muted">Waiting for MQTT activity…</li>
+                    ) : (
+                      automationLog.map((row, i) => (
+                        <li key={i} className="rounded-lg bg-white/80 px-2 py-2 border border-emerald-100">
+                          <span className="font-mono text-sk-ink-muted">{row.time}</span>
+                          <p className="font-semibold">{row.decision}</p>
+                          <p className="text-sk-ink-muted">SOC {row.soc} · {row.reason}</p>
+                        </li>
+                      ))
+                    )}
+                  </ul>
+                )}
               </Card>
 
-              <Card title="Recent Transfers" className="!shadow-none border-emerald-200/60">
-                <ul className="space-y-2 text-sm">
-                  {txHistory.slice(0, 4).map((t, i) => (
-                    <li key={i} className="rounded-lg bg-white/80 px-2 py-2 border border-emerald-100">
-                      <span className="font-mono text-xs text-sk-ink-muted">{t.time}</span>
-                      <p className="font-semibold">{t.from} → {t.to}</p>
-                    </li>
-                  ))}
-                </ul>
+              <Card title="Recent Transfers (MQTT)" className="!shadow-none border-emerald-200/60">
+                {txHistory.length === 0 ? (
+                  <p className="text-xs text-sk-ink-muted py-4 text-center">
+                    No transfers logged yet — trigger A↔B transfer with solar + deficit.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-[10px] uppercase tracking-widest text-sk-ink-muted">
+                          <th className="text-left py-1">Time</th>
+                          <th className="text-left py-1">Route</th>
+                          <th className="text-left py-1">kW</th>
+                          <th className="text-left py-1">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {txHistory.slice(0, 8).map((t, i) => (
+                          <tr key={i} className="border-t border-emerald-100">
+                            <td className="py-2 font-mono">{t.time}</td>
+                            <td className="py-2 font-semibold">{t.from} → {t.to}</td>
+                            <td className="py-2 font-mono">{t.kw}</td>
+                            <td className="py-2">
+                              <TransferStatusPill status={t.status} />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </Card>
             </div>
           </div>
         ) : (
           <div className="rounded-2xl border-2 border-amber-300/80 bg-gradient-to-br from-amber-50/90 to-orange-50/40 p-4 space-y-4">
-            <p className="text-sm font-semibold text-amber-950">Manual override — one-time transfer (automation pauses 5 min)</p>
+            <p className="text-sm font-semibold text-amber-950">
+              Manual override — UI preview only. Real transfers run on ESP32 firmware (Greedy + relays).
+            </p>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <Card title="From (Surplus)" className="!shadow-none border-amber-200/60">
@@ -273,7 +320,7 @@ function ModeTab({ label, active, onClick, tone }) {
 
 function HouseStatusCard({ house }) {
   const positive = house.surplus >= 0;
-  const transferring = house.transfer === 'SENDING';
+  const transferring = isTransferActive(house.transfer);
   return (
     <div className="rounded-xl border border-sk-card-border/40 bg-white/60 p-4">
       <div className="flex justify-between items-start mb-3">
@@ -283,13 +330,31 @@ function HouseStatusCard({ house }) {
         </p>
       </div>
       <p className="text-xs font-mono text-sk-ink-muted mb-2">
-        {house.solar}W solar · {house.status} {house.online ? '· online' : '· offline'}
+        {house.solar}W solar · {house.voltage?.toFixed?.(1) ?? '—'} V · {house.current?.toFixed?.(2) ?? '—'} A
+      </p>
+      <p className="text-xs text-sk-ink-muted mb-2">
+        {house.status} · {house.transfer} · {house.online ? 'online' : 'offline'}
       </p>
       <StatusPill ok={house.relay} label={house.relay ? 'Relay ON' : 'Relay OFF'} />
       {transferring && (
-        <StatusPill ok label="Transferring ⚡" />
+        <StatusPill ok label={`${house.transfer} ⚡`} />
       )}
     </div>
+  );
+}
+
+function TransferStatusPill({ status }) {
+  const s = String(status || 'DONE').toUpperCase();
+  const tone =
+    s === 'TRANSFERRING' || s === 'PREPARING'
+      ? 'bg-amber-100 text-amber-900'
+      : s === 'DONE'
+        ? 'bg-emerald-100 text-emerald-900'
+        : 'bg-sky-100 text-sky-900';
+  return (
+    <span className={`inline-flex text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${tone}`}>
+      {s}
+    </span>
   );
 }
 

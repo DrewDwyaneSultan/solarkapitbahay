@@ -147,10 +147,10 @@ export default function CommunityBatteryScene({ data, capacityKwh = 100 }) {
           width="64"
           height="17"
           rx="4"
-          fill={data.houseA.relay ? '#1D9E75' : '#888780'}
+          fill={data.houseA.online && data.houseA.relay ? '#1D9E75' : '#888780'}
         />
         <text x="98" y="106" textAnchor="middle" fontSize="10" fontWeight="500" fill="#E1F5EE" fontFamily={FONT}>
-          House A · {data.houseA.relay ? 'ON' : 'OFF'}
+          House A · {!data.houseA.online ? 'OFFLINE' : data.houseA.relay ? 'ON' : 'OFF'}
         </text>
       </g>
 
@@ -206,10 +206,10 @@ export default function CommunityBatteryScene({ data, capacityKwh = 100 }) {
           width="64"
           height="17"
           rx="4"
-          fill={data.houseB.relay ? '#1D9E75' : '#888780'}
+          fill={data.houseB.online && data.houseB.relay ? '#1D9E75' : '#888780'}
         />
         <text x="526" y="106" textAnchor="middle" fontSize="10" fontWeight="500" fill="#F1EFE8" fontFamily={FONT}>
-          House B · {data.houseB.relay ? 'ON' : 'OFF'}
+          House B · {!data.houseB.online ? 'OFFLINE' : data.houseB.relay ? 'ON' : 'OFF'}
         </text>
       </g>
 

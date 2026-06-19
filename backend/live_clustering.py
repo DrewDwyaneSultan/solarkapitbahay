@@ -1,8 +1,8 @@
 """
 Live clustering overlay — House A / B from MQTT → charge / discharge / balanced.
 
-Uses same action labels as clustering.py (K-means on CSV). SOC is placeholder until
-battery divider on D32; net load derived from solar vs estimated load (watts).
+Uses same action labels as clustering.py (K-means on CSV). SOC from House A battery
+divider (D32) via MQTT topics solar/A/battery/*; shared with House B display.
 """
 
 from __future__ import annotations
@@ -59,13 +59,14 @@ def _live_house_record(code: str, house: dict[str, Any], battery_pct: float) -> 
 
 def run_live_clustering() -> dict[str, Any]:
     live = get_live_payload()
-    battery_pct = float(live.get("battery", 54))
+    battery_pct = float(live.get("battery") or live.get("battery_percent") or 54)
 
     households: list[dict[str, Any]] = []
     for code, key in (("A", "houseA"), ("B", "houseB")):
         h = live.get(key) or {}
         if h.get("online"):
-            households.append(_live_house_record(code, h, battery_pct))
+            pct = float(h.get("battery_percent") or battery_pct)
+            households.append(_live_house_record(code, h, pct))
 
     summary = {a: sum(1 for h in households if h["action"] == a) for a in ACTION_META}
 

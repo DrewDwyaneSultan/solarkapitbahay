@@ -2,6 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient';
 import { fetchMe } from '../services/authApi';
 
+export function getProfileRole(profile) {
+  if (!profile) return null;
+  const role = String(profile.role ?? '').toLowerCase().trim();
+  return role === 'household' ? 'household' : 'operator';
+}
+
 export function profileToUser(profile) {
   const name = profile.display_name ?? 'User';
   const initials =
@@ -12,7 +18,7 @@ export function profileToUser(profile) {
       .map((part) => part[0]?.toUpperCase() ?? '')
       .join('') || 'U';
 
-  if (profile.role === 'household') {
+  if (getProfileRole(profile) === 'household') {
     return {
       role: 'household',
       name,
@@ -66,14 +72,18 @@ export function useAuth() {
     }
   }, []);
 
-  const shouldSilentRefresh = useCallback((event) => {
+  const shouldSilentRefresh = useCallback((event, nextSession) => {
     if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') return true;
-    // Tab focus / session sync — already signed in, don't blank the UI.
-    if (bootstrappedRef.current && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
-      return true;
+    // Tab/session sync for the same user — keep UI visible while refreshing.
+    if (
+      (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') &&
+      bootstrappedRef.current &&
+      nextSession?.user?.id
+    ) {
+      return profile?.id === nextSession.user.id && profile != null;
     }
     return false;
-  }, []);
+  }, [profile?.id]);
 
   useEffect(() => {
     if (!isSupabaseConfigured() || !supabase) {
@@ -104,10 +114,11 @@ export function useAuth() {
     } = supabase.auth.onAuthStateChange((event, nextSession) => {
       setSession(nextSession);
       if (nextSession?.access_token) {
-        if (shouldSilentRefresh(event)) {
+        if (shouldSilentRefresh(event, nextSession)) {
           refreshProfile(nextSession.access_token);
           return;
         }
+        setProfile(null);
         setLoading(true);
         refreshProfile(nextSession.access_token).finally(() => {
           bootstrappedRef.current = true;

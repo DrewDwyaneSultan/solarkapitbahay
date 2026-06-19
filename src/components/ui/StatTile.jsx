@@ -17,7 +17,7 @@ const iconMap = {
   time: '⏱️',
 };
 
-export default function StatTile({ label, value, bgKey, icon }) {
+export default function StatTile({ label, value, bgKey, icon, hint }) {
   const glyph = icon ?? iconMap[bgKey] ?? null;
 
   return (
@@ -39,6 +39,9 @@ export default function StatTile({ label, value, bgKey, icon }) {
           {label}
         </p>
         <p className="mt-1 text-xl font-semibold text-sk-ink tabular-nums">{value}</p>
+        {hint && (
+          <p className="mt-1.5 text-[10px] leading-snug text-sk-ink-muted">{hint}</p>
+        )}
       </div>
     </div>
   );

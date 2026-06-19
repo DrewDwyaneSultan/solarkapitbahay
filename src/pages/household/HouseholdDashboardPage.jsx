@@ -8,6 +8,7 @@ import SimpleDualBarChart from '../../components/charts/SimpleDualBarChart';
 import { resolveCircuit } from '../../constants/circuits';
 import { useHouseholdCluster } from '../../hooks/useClustering';
 import { getMemberHouse, useLiveData } from '../../hooks/useLiveData';
+import LiveStatusBadge from '../../components/ui/LiveStatusBadge';
 import { householdMemberRows } from '../../constants/mockSimulation';
 
 export default function HouseholdDashboardPage({ memberName = 'User', householdId = 'HH-01' }) {
@@ -42,10 +43,7 @@ export default function HouseholdDashboardPage({ memberName = 'User', householdI
             <strong className="text-emerald-800">₱{Math.round(data.savings / 2).toLocaleString()}</strong>
           </p>
         </div>
-        <div className="flex items-center gap-2 text-xs text-sk-ink-muted">
-          <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
-          Live · {new Date().toLocaleTimeString()}
-        </div>
+        <LiveStatusBadge data={data} />
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

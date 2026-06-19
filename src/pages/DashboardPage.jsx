@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import Card from '../components/ui/Card';
 import StatTile from '../components/ui/StatTile';
 import BatteryOrganism from '../components/energy/BatteryOrganism';
@@ -6,30 +6,112 @@ import SimpleLineChart from '../components/charts/SimpleLineChart';
 import SimpleDualBarChart from '../components/charts/SimpleDualBarChart';
 import ClusterScatterPlot from '../components/clustering/ClusterScatterPlot';
 import ClusterMetrics from '../components/clustering/ClusterMetrics';
+import LiveStatusBadge from '../components/ui/LiveStatusBadge';
 import { useClustering } from '../hooks/useClustering';
+import {
+  buildPeakHourChart,
+  buildSavingsTrend,
+  estimateCo2Kg,
+  useLatestSimulation,
+} from '../hooks/useLatestSimulation';
 import { useLiveData } from '../hooks/useLiveData';
+import { buildLiveClusterOverlay } from '../utils/liveClusterOverlay';
+
+function formatCurrency(value) {
+  return `₱${Number(value || 0).toLocaleString('en-PH', { maximumFractionDigits: 0 })}`;
+}
 
 export default function DashboardPage({ operatorName = 'Barangay Operator' }) {
   const data = useLiveData();
+  const { results: sim, runMeta, loading: simLoading } = useLatestSimulation();
   const {
     data: clusterData,
     loading: clusterLoading,
     error: clusterError,
-    liveHouseholds,
-    liveActive,
   } = useClustering();
   const [chartPeriod, setChartPeriod] = useState('week');
-  const savingsData = [20, 35, 45, 60, 80, 110, 140];
-  const hourWithout = [8, 7, 6, 5];
-  const hourWith = [3, 2, 1.5, 1];
-  const hourLabels = ['6PM', '7PM', '8PM', '9PM'];
 
-  const stats = [
-    { id: 'savings', label: 'Total Savings', value: `₱${data.savings.toLocaleString()}`, bgKey: 'savings', icon: '💰' },
-    { id: 'grid', label: 'Grid Reduction', value: `${data.gridRed}%`, bgKey: 'grid', icon: '⚡' },
-    { id: 'gini', label: 'Fairness Score', value: String(data.gini), bgKey: 'battery', icon: '⚖️' },
-    { id: 'co2', label: 'CO₂ Offset', value: `${data.co2} kg`, bgKey: 'solar', icon: '🌱' },
-  ];
+  const liveHouseholds = useMemo(() => buildLiveClusterOverlay(data), [data]);
+  const liveActive = liveHouseholds.length > 0;
+
+  const savingsTrend = useMemo(() => buildSavingsTrend(sim, chartPeriod), [sim, chartPeriod]);
+  const peakChart = useMemo(() => buildPeakHourChart(sim), [sim]);
+  const co2Kg = sim ? estimateCo2Kg(sim.solar_generated_kwh) : null;
+
+  const stats = sim
+    ? [
+        {
+          id: 'savings',
+          label: 'Total Savings',
+          value: formatCurrency(sim.total_savings_php),
+          bgKey: 'savings',
+          icon: '💰',
+          hint: `PHP saved over ${sim.simulation_days ?? 30} simulated days (greedy sharing).`,
+        },
+        {
+          id: 'grid',
+          label: 'Grid Reduction',
+          value: `${sim.grid_reduction_pct}%`,
+          bgKey: 'grid',
+          icon: '⚡',
+          hint: 'Less grid energy bought vs. everyone on their own.',
+        },
+        {
+          id: 'gini',
+          label: 'Fairness (Gini)',
+          value: String(sim.gini_coefficient),
+          bgKey: 'battery',
+          icon: '⚖️',
+          hint: '0 = perfectly fair shares; closer to 1 = uneven distribution.',
+        },
+        {
+          id: 'co2',
+          label: 'CO₂ Offset',
+          value: `${co2Kg} kg`,
+          bgKey: 'solar',
+          icon: '🌱',
+          hint: 'Estimated emissions avoided from shared solar (0.79 kg/kWh).',
+        },
+      ]
+    : [
+        {
+          id: 'savings',
+          label: 'Total Savings',
+          value: '—',
+          bgKey: 'savings',
+          icon: '💰',
+          hint: 'Run a simulation to see projected community savings.',
+        },
+        {
+          id: 'grid',
+          label: 'Grid Reduction',
+          value: '—',
+          bgKey: 'grid',
+          icon: '⚡',
+          hint: 'Run a simulation to see grid draw reduction.',
+        },
+        {
+          id: 'gini',
+          label: 'Fairness (Gini)',
+          value: '—',
+          bgKey: 'battery',
+          icon: '⚖️',
+          hint: 'Run a simulation to see how evenly energy is shared.',
+        },
+        {
+          id: 'co2',
+          label: 'CO₂ Offset',
+          value: '—',
+          bgKey: 'solar',
+          icon: '🌱',
+          hint: 'Run a simulation to estimate avoided emissions.',
+        },
+      ];
+
+  const trendTotal = savingsTrend.reduce((a, b) => a + b, 0);
+  const runLabel = runMeta?.created_at
+    ? new Date(runMeta.created_at).toLocaleString()
+    : null;
 
   return (
     <div className="space-y-5">
@@ -39,18 +121,39 @@ export default function DashboardPage({ operatorName = 'Barangay Operator' }) {
             Good morning, <em className="text-sk-accent not-italic">{operatorName}</em>
           </h2>
           <p className="text-sm text-sk-ink-muted mt-1">
-            Community savings this month: <strong className="text-emerald-800">₱{data.savings.toLocaleString()}</strong>
+            {sim ? (
+              <>
+                Latest simulation:{' '}
+                <strong className="text-emerald-800">{formatCurrency(sim.monthly_savings_php)}/mo</strong>
+                {runLabel && (
+                  <span className="text-sk-ink-muted"> · saved {runLabel}</span>
+                )}
+              </>
+            ) : (
+              <>
+                No simulation yet — open <strong className="text-sk-ink">Simulation</strong> and run
+                greedy sharing to populate these metrics.
+              </>
+            )}
           </p>
         </div>
-        <div className="flex items-center gap-2 text-xs text-sk-ink-muted">
-          <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
-          Live · {new Date().toLocaleTimeString()}
-        </div>
+        <LiveStatusBadge data={data} />
       </div>
+
+      {simLoading && !sim && (
+        <p className="text-xs text-sk-ink-muted">Loading latest simulation…</p>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {stats.map((stat) => (
-          <StatTile key={stat.id} label={stat.label} value={stat.value} bgKey={stat.bgKey} icon={stat.icon} />
+          <StatTile
+            key={stat.id}
+            label={stat.label}
+            value={stat.value}
+            bgKey={stat.bgKey}
+            icon={stat.icon}
+            hint={stat.hint}
+          />
         ))}
       </div>
 
@@ -74,7 +177,7 @@ export default function DashboardPage({ operatorName = 'Barangay Operator' }) {
             {clusterError} — start the backend with <code className="text-xs">npm run dev:backend</code>.
           </p>
         )}
-        {clusterLoading ? (
+        {clusterLoading && !clusterData ? (
           <p className="text-sm text-sk-ink-muted py-16 text-center">Loading clustering…</p>
         ) : (
           <>
@@ -108,13 +211,39 @@ export default function DashboardPage({ operatorName = 'Barangay Operator' }) {
               </button>
             ))}
           </div>
-          <SimpleLineChart data={savingsData} height={120} />
-          <p className="text-xs text-emerald-800 mt-2 font-semibold">Total this week: ₱680 (+32%)</p>
+          {sim ? (
+            <>
+              <SimpleLineChart data={savingsTrend} height={120} />
+              <p className="text-xs text-emerald-800 mt-2 font-semibold">
+                Total this {chartPeriod}: {formatCurrency(trendTotal)}
+                {sim.grid_reduction_pct != null && ` · ${sim.grid_reduction_pct}% less grid`}
+              </p>
+            </>
+          ) : (
+            <p className="text-sm text-sk-ink-muted py-10 text-center">
+              Run a simulation to chart projected daily savings.
+            </p>
+          )}
         </Card>
 
         <Card title="Peak Hour Savings">
           <p className="text-xs text-sk-ink-muted mb-3">6 PM – 9 PM · Avoided ₱15/kWh peak</p>
-          <SimpleDualBarChart withoutData={hourWithout} withData={hourWith} labels={hourLabels} />
+          {sim ? (
+            <>
+              <SimpleDualBarChart
+                withoutData={peakChart.without}
+                withData={peakChart.withSharing}
+                labels={peakChart.labels}
+              />
+              <p className="text-xs text-sk-ink-muted mt-2">
+                Bars scaled from latest run&apos;s {sim.grid_reduction_pct}% grid reduction.
+              </p>
+            </>
+          ) : (
+            <p className="text-sm text-sk-ink-muted py-10 text-center">
+              Run a simulation to compare peak-hour grid draw with vs. without sharing.
+            </p>
+          )}
         </Card>
       </div>
     </div>

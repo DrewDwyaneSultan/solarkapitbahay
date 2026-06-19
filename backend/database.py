@@ -718,6 +718,58 @@ def list_households(barangay_id: int | None = None, claimable_only: bool = False
     return rows
 
 
+def create_operator_household(
+    barangay_id: int,
+    barangay_code: str,
+    head_name: str,
+    *,
+    address: str | None = None,
+    purok: str | None = None,
+    has_solar: bool = False,
+    has_battery: bool = False,
+) -> dict:
+    """Add a claimable household record for an operator's barangay."""
+    now = _utc_now()
+    with db_connection() as conn:
+        row = fetchone(
+            conn,
+            "SELECT COUNT(*) AS n FROM households WHERE barangay_id = ?",
+            (barangay_id,),
+        )
+        seq = int(row["n"] if row else 0) + 1
+        hid = f"HH-{barangay_id:03d}-{seq:02d}"
+        while fetchone(conn, "SELECT 1 AS ok FROM households WHERE id = ?", (hid,)):
+            seq += 1
+            hid = f"HH-{barangay_id:03d}-{seq:02d}"
+
+        hh_code = _generate_household_code(barangay_code)
+        battery_kwh = 5.0 if has_battery else None
+        conn.execute(
+            """
+            INSERT INTO households
+            (id, barangay_id, head_name, purok, address, has_solar, has_battery,
+             battery_capacity_kwh, income_tier, status, household_code, claimable, registered_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'mid', 'active', ?, 1, ?)
+            """,
+            (
+                hid,
+                barangay_id,
+                head_name.strip(),
+                purok,
+                address,
+                int(has_solar),
+                int(has_battery),
+                battery_kwh,
+                hh_code,
+                now,
+            ),
+        )
+    created = get_household(hid)
+    if not created:
+        raise RuntimeError("Household insert failed.")
+    return created
+
+
 def get_household(household_id: str) -> dict | None:
     with db_connection() as conn:
         row = fetchone(

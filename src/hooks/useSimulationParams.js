@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import { simulationDefaults } from '../constants/theme';
+import { persistSimulationResults } from './useLatestSimulation';
 import { runSimulation as runSimulationApi } from '../services/simulationApi';
 
 export function useSimulationParams() {
@@ -26,6 +27,7 @@ export function useSimulationParams() {
         });
         setResults(data);
         setLastRunAt(new Date());
+        persistSimulationResults(data);
       } catch (err) {
         setError(err.message ?? 'Simulation failed. Is the backend running?');
         setResults(null);

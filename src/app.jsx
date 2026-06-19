@@ -4,7 +4,7 @@ import OperatorDashboard from './pages/OperatorDashboard';
 import HouseholdMemberApp from './pages/household/HouseholdMemberApp';
 import HouseholdStatusScreen from './pages/household/HouseholdStatusScreen';
 import BarangayOnboarding from './pages/BarangayOnboarding';
-import { useAuth, profileToUser } from './hooks/useAuth';
+import { useAuth, profileToUser, getProfileRole } from './hooks/useAuth';
 import { fetchMyBarangay } from './services/registrationApi';
 
 function LoadingScreen() {
@@ -29,7 +29,7 @@ function App() {
   };
 
   const refreshOperatorBarangay = useCallback(async () => {
-    if (!auth.session?.access_token || auth.user?.role !== 'operator') {
+    if (!auth.session?.access_token || getProfileRole(auth.profile) !== 'operator') {
       setBarangayCheckDone(true);
       return;
     }
@@ -41,13 +41,13 @@ function App() {
     } finally {
       setBarangayCheckDone(true);
     }
-  }, [auth.session?.access_token, auth.user?.role]);
+  }, [auth.session?.access_token, auth.profile]);
 
   useEffect(() => {
     if (auth.loading) return;
 
     const isOperator =
-      auth.user?.role === 'operator' && auth.supabaseEnabled && auth.session;
+      getProfileRole(auth.profile) === 'operator' && auth.supabaseEnabled && auth.session;
 
     if (!isOperator) {
       setBarangayCheckDone(true);
@@ -67,7 +67,7 @@ function App() {
     refreshOperatorBarangay();
   }, [
     auth.loading,
-    auth.user?.role,
+    auth.profile,
     auth.supabaseEnabled,
     auth.session,
     auth.profile?.barangay_id,
@@ -87,6 +87,15 @@ function App() {
   }
 
   const activeUser = demoUser ?? auth.user;
+  const profileRole = auth.profile ? getProfileRole(auth.profile) : null;
+  const effectiveRole =
+    profileRole ?? (activeUser?.role === 'household' ? 'household' : 'operator');
+  const householdUser =
+    profileRole === 'household' && auth.profile
+      ? profileToUser(auth.profile)
+      : activeUser?.role === 'household'
+        ? activeUser
+        : null;
 
   if (auth.needsProfile && auth.session) {
     return (
@@ -94,7 +103,20 @@ function App() {
         needsProfile
         session={auth.session}
         supabaseEnabled={auth.supabaseEnabled}
-        onProfileComplete={(saved) => auth.setProfileFromSave(saved)}
+        defaultRole={
+          typeof sessionStorage !== 'undefined'
+            ? sessionStorage.getItem('skb_intended_role') || 'household'
+            : 'household'
+        }
+        onProfileComplete={(saved) => {
+          auth.setProfileFromSave(saved);
+          setDemoUser(null);
+          try {
+            sessionStorage.removeItem('skb_intended_role');
+          } catch {
+            /* ignore */
+          }
+        }}
         onSignIn={() => {}}
       />
     );
@@ -132,29 +154,36 @@ function App() {
       );
     }
 
-    return (
-      <Login
-        supabaseEnabled={auth.supabaseEnabled}
-        onSignIn={({ user, session }) => {
-          if (user) {
-            setDemoUser(user);
-          } else if (session && auth.profile) {
-            setDemoUser(profileToUser(auth.profile));
-          }
-        }}
-        onProfileComplete={(saved) => auth.setProfileFromSave(saved)}
-      />
-    );
+    if (!auth.session) {
+      return (
+        <Login
+          supabaseEnabled={auth.supabaseEnabled}
+          onSignIn={({ user, session }) => {
+            if (user?.role === 'household') {
+              setDemoUser(user);
+              return;
+            }
+            setDemoUser(null);
+            if (session && auth.profile && getProfileRole(auth.profile) === 'operator') {
+              setDemoUser(profileToUser(auth.profile));
+            }
+          }}
+          onProfileComplete={(saved) => auth.setProfileFromSave(saved)}
+        />
+      );
+    }
+
+    return <LoadingScreen />;
   }
 
-  if (activeUser.role === 'household') {
-    if (activeUser.status === 'pending' || activeUser.status === 'rejected') {
+  if (effectiveRole === 'household' && householdUser) {
+    if (householdUser.status === 'pending' || householdUser.status === 'rejected') {
       return (
         <HouseholdStatusScreen
-          status={activeUser.status}
-          displayName={activeUser.name}
-          barangayName={activeUser.barangayName}
-          rejectionReason={activeUser.rejectionReason}
+          status={householdUser.status}
+          displayName={householdUser.name}
+          barangayName={householdUser.barangayName}
+          rejectionReason={householdUser.rejectionReason}
           onLogout={handleLogout}
         />
       );
@@ -163,12 +192,12 @@ function App() {
     return (
       <HouseholdMemberApp
         member={{
-          name: activeUser.name ?? 'User',
-          householdId: activeUser.householdId ?? 'HH-01',
+          name: householdUser.name ?? 'User',
+          householdId: householdUser.householdId ?? 'HH-01',
         }}
         barangay={{
-          name: activeUser.barangayName ?? 'Barangay',
-          householdCode: activeUser.house ?? 'household_code',
+          name: householdUser.barangayName ?? 'Barangay',
+          householdCode: householdUser.house ?? 'household_code',
         }}
         onLogout={handleLogout}
       />
@@ -176,6 +205,7 @@ function App() {
   }
 
   if (
+    effectiveRole === 'operator' &&
     auth.supabaseEnabled &&
     auth.session &&
     !demoUser &&

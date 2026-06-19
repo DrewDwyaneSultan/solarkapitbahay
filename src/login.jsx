@@ -28,14 +28,17 @@ const demoAccounts = {
   },
 };
 
+const INTENDED_ROLE_KEY = 'skb_intended_role';
+
 export default function Login({
   onSignIn,
   onProfileComplete,
   needsProfile = false,
   session = null,
   supabaseEnabled = isSupabaseConfigured(),
+  defaultRole = 'operator',
 }) {
-  const [role, setRole] = useState('operator');
+  const [role, setRole] = useState(defaultRole);
   const [mode, setMode] = useState(needsProfile ? 'complete' : 'signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -58,6 +61,23 @@ export default function Login({
   useEffect(() => {
     if (needsProfile) setMode('complete');
   }, [needsProfile]);
+
+  useEffect(() => {
+    if (needsProfile && defaultRole) setRole(defaultRole);
+  }, [needsProfile, defaultRole]);
+
+  const persistIntendedRole = (nextRole) => {
+    try {
+      sessionStorage.setItem(INTENDED_ROLE_KEY, nextRole);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const setRoleAndPersist = (nextRole) => {
+    setRole(nextRole);
+    persistIntendedRole(nextRole);
+  };
 
   useEffect(() => {
     if (mode !== 'complete' || role !== 'household') return;
@@ -93,6 +113,7 @@ export default function Login({
   const handleGoogleSignIn = async () => {
     if (!supabase) return;
     resetMessages();
+    persistIntendedRole(role);
     setBusy(true);
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: 'google',
@@ -119,9 +140,11 @@ export default function Login({
         return;
       }
       if (data.session) {
+        persistIntendedRole(role);
         onSignIn?.({ session: data.session });
       }
     } else {
+      persistIntendedRole(role);
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: email.trim(),
         password,
@@ -183,6 +206,11 @@ export default function Login({
           hasBattery && batteryCapacity ? Number.parseFloat(batteryCapacity) : null,
       });
       onProfileComplete?.(saved);
+      try {
+        sessionStorage.removeItem(INTENDED_ROLE_KEY);
+      } catch {
+        /* ignore */
+      }
       onSignIn?.({ user: profileToUser(saved) });
     } catch (err) {
       setError(err.message ?? 'Could not save profile.');
@@ -251,7 +279,7 @@ export default function Login({
               <button
                 type="button"
                 onClick={() => {
-                  setRole('operator');
+                  setRoleAndPersist('operator');
                   resetMessages();
                 }}
                 className={`flex-1 py-1.5 text-[10px] uppercase tracking-widest font-bold rounded-md transition-colors ${
@@ -265,7 +293,7 @@ export default function Login({
               <button
                 type="button"
                 onClick={() => {
-                  setRole('household');
+                  setRoleAndPersist('household');
                   resetMessages();
                 }}
                 className={`flex-1 py-1.5 text-[10px] uppercase tracking-widest font-bold rounded-md transition-colors ${
@@ -293,7 +321,7 @@ export default function Login({
                 <div className="flex bg-white/70 p-1 rounded-lg border border-sk-card-border/50 mb-2">
                   <button
                     type="button"
-                    onClick={() => setRole('operator')}
+                    onClick={() => setRoleAndPersist('operator')}
                     className={`flex-1 py-1 text-[10px] uppercase tracking-widest font-bold rounded-md ${
                       role === 'operator' ? 'bg-white text-sk-ink shadow-sm' : 'text-sk-ink-muted'
                     }`}
@@ -302,7 +330,7 @@ export default function Login({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setRole('household')}
+                    onClick={() => setRoleAndPersist('household')}
                     className={`flex-1 py-1 text-[10px] uppercase tracking-widest font-bold rounded-md ${
                       role === 'household' ? 'bg-white text-sk-ink shadow-sm' : 'text-sk-ink-muted'
                     }`}

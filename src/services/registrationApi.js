@@ -75,3 +75,13 @@ export async function fetchHouseholdsByBarangay(barangayCode, { claimableOnly = 
   const data = await res.json();
   return data.households ?? [];
 }
+
+export async function createHousehold(accessToken, payload) {
+  const res = await fetch(`${API_BASE}/api/households`, {
+    method: 'POST',
+    headers: authHeaders(accessToken),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}

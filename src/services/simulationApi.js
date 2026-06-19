@@ -30,3 +30,9 @@ export async function fetchSimulationRuns(limit = 10) {
   if (!res.ok) throw new Error('Failed to load simulation history.');
   return res.json();
 }
+
+export async function fetchSimulationRunDetail(runId) {
+  const res = await fetch(`${API_BASE}/api/simulation/runs/${runId}`);
+  if (!res.ok) throw new Error('Failed to load simulation run.');
+  return res.json();
+}
