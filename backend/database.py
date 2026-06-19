@@ -8,6 +8,7 @@ import secrets
 import string
 import threading
 from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -128,6 +129,7 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     battery_model TEXT,
     battery_capacity_kwh DOUBLE PRECISION,
     status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','pending','inactive','rejected')),
+    roles TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ
 );
@@ -419,13 +421,8 @@ def _migrate_onboarding(conn) -> None:
     profile_cols = _table_columns(conn, "user_profiles")
     if profile_cols and "roles" not in profile_cols:
         conn.execute("ALTER TABLE user_profiles ADD COLUMN roles TEXT")
-        conn.execute(
-            """
-            UPDATE user_profiles
-            SET roles = '["' || role || '"]'
-            WHERE roles IS NULL OR roles = ''
-            """
-        )
+
+    _backfill_roles_column(conn)
 
     # Backfill demo barangay code and claimable households for seeded data
     demo = fetchone(conn, "SELECT id, barangay_code FROM barangays ORDER BY id LIMIT 1")
@@ -491,9 +488,9 @@ def ensure_app_db() -> None:
         if _db_initialized:
             return
         if os.getenv("VERCEL") and _postgres_schema_ready():
+            with db_connection() as conn:
+                _migrate_onboarding(conn)
             try:
-                with db_connection() as conn:
-                    _migrate_onboarding(conn)
                 seed_database()
             except Exception:
                 pass
@@ -1458,18 +1455,72 @@ def _profile_row_to_dict(row: Any, conn: Any = None, auth_user_id: str | None = 
     return _enrich_profile(data, conn, auth_user_id)
 
 
+def _backfill_roles_column(conn: Any) -> None:
+    cols = _table_columns(conn, "user_profiles")
+    if not cols or "roles" not in cols:
+        return
+    if use_postgres():
+        conn.execute(
+            """
+            UPDATE user_profiles
+            SET roles = json_build_array(role)::text
+            WHERE roles IS NULL OR roles = ''
+            """
+        )
+    else:
+        conn.execute(
+            """
+            UPDATE user_profiles
+            SET roles = '["' || role || '"]'
+            WHERE roles IS NULL OR roles = ''
+            """
+        )
+
+
+def _ensure_roles_column(conn: Any) -> None:
+    cols = _table_columns(conn, "user_profiles")
+    if not cols:
+        return
+    if "roles" not in cols:
+        conn.execute("ALTER TABLE user_profiles ADD COLUMN roles TEXT")
+    _backfill_roles_column(conn)
+
+
+def _json_safe_value(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return value
+
+
+def _json_safe_profile(profile: dict) -> dict:
+    safe = {key: _json_safe_value(val) for key, val in profile.items()}
+    roles = safe.get("roles")
+    if isinstance(roles, list):
+        safe["roles"] = roles
+    return safe
+
+
 def _maybe_backfill_roles(conn: Any, auth_user_id: str, derived: list[str], row: dict) -> None:
+    cols = _table_columns(conn, "user_profiles")
+    if "roles" not in cols:
+        return
     stored = _parse_roles(row)
     if set(stored) == set(derived):
         return
-    conn.execute(
-        "UPDATE user_profiles SET roles = ?, updated_at = ? WHERE id = ?",
-        (_serialize_roles(derived), _utc_now(), auth_user_id),
-    )
+    try:
+        conn.execute(
+            "UPDATE user_profiles SET roles = ?, updated_at = ? WHERE id = ?",
+            (_serialize_roles(derived), _utc_now(), auth_user_id),
+        )
+    except Exception:
+        return
 
 
 def get_user_profile(auth_user_id: str) -> dict | None:
     with db_connection() as conn:
+        _ensure_roles_column(conn)
         row = fetchone(
             conn,
             """
@@ -1505,7 +1556,7 @@ def get_user_profile(auth_user_id: str) -> dict | None:
             )
             if reg and reg.get("rejection_reason"):
                 profile["rejection_reason"] = reg["rejection_reason"]
-    return profile
+    return _json_safe_profile(profile)
 
 
 def upsert_user_profile(
@@ -1572,6 +1623,7 @@ def upsert_user_profile(
         status = existing.get("status") or status
 
     with db_connection() as conn:
+        _ensure_roles_column(conn)
         if existing:
             if role == "operator" and "household" in existing_roles:
                 conn.execute(
