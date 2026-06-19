@@ -26,6 +26,7 @@ import {
   readActiveRole,
   resolveActiveRole,
 } from './utils/activeRole';
+import { rolesKey } from './utils/profileRoles';
 
 function LoadingScreen({ message = 'Loading…' }) {
   return (
@@ -102,10 +103,16 @@ function App() {
 
   useEffect(() => {
     if (!auth.profile) return;
+    const roles = getProfileRoles(auth.profile);
+    const stored = readActiveRole();
+    if (stored && roles.includes(stored)) {
+      setActiveRole(stored);
+      return;
+    }
     const resolved = resolveActiveRole(auth.profile, intendedRole ?? readIntendedRole());
     setActiveRole(resolved);
     persistActiveRole(resolved);
-  }, [auth.profile, intendedRole]);
+  }, [auth.profile?.id, auth.profile ? rolesKey(auth.profile) : '']);
 
   const profileRoles = auth.profile ? getProfileRoles(auth.profile) : [];
   const effectiveIntended = intendedRole ?? readIntendedRole();
@@ -140,17 +147,19 @@ function App() {
 
   const handleRoleSwitch = useCallback(
     async (newRole) => {
-      persistActiveRole(newRole);
-      setActiveRole(newRole);
+      if (!profileHasRole(auth.profile, newRole)) return;
+
       clearIntendedRole();
       setIntendedRole(null);
+      persistActiveRole(newRole);
+      setActiveRole(newRole);
 
-      if (auth.session?.access_token && profileHasRole(auth.profile, newRole)) {
+      if (auth.session?.access_token) {
         try {
           const updated = await switchActiveRole(auth.session.access_token, newRole);
           auth.setProfileFromSave(updated);
         } catch {
-          /* client-side switch is enough for UI */
+          /* client-side view already switched */
         }
       }
 
@@ -406,22 +415,31 @@ function App() {
     auth.profile?.barangay_code ??
     null;
 
-  return (
-    <OperatorDashboard
-      operator={{
-        initials: activeUser?.initials ?? 'JU',
-        name: activeUser?.name ?? 'Operator',
-        role: activeUser?.roleLabel ?? 'Barangay Operator',
-      }}
-      barangayName={barangayName}
-      barangayCode={barangayCode}
-      accessToken={auth.session?.access_token ?? null}
-      profileRoles={profileRoles}
-      activeRole={viewRole ?? 'operator'}
-      onSwitchRole={handleRoleSwitch}
-      onLogout={handleLogout}
-    />
-  );
+  if (
+    auth.session &&
+    auth.profile &&
+    viewRole !== 'household' &&
+    profileHasRole(auth.profile, 'operator')
+  ) {
+    return (
+      <OperatorDashboard
+        operator={{
+          initials: activeUser?.initials ?? 'JU',
+          name: activeUser?.name ?? 'Operator',
+          role: activeUser?.roleLabel ?? 'Barangay Operator',
+        }}
+        barangayName={barangayName}
+        barangayCode={barangayCode}
+        accessToken={auth.session?.access_token ?? null}
+        profileRoles={profileRoles}
+        activeRole={viewRole ?? 'operator'}
+        onSwitchRole={handleRoleSwitch}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  return <LoadingScreen message="Loading your dashboard…" />;
 }
 
 export default App;

@@ -1401,25 +1401,71 @@ def profile_has_role(profile: dict | None, role: str) -> bool:
     return role in _parse_roles(profile)
 
 
-def _enrich_profile(profile: dict) -> dict:
-    roles = _parse_roles(profile)
-    has_operator = "operator" in roles
-    has_household = "household" in roles
+def _derive_roles(profile: dict, conn: Any = None, auth_user_id: str | None = None) -> list[str]:
+    role_set = set(_parse_roles(profile))
+
+    if profile.get("operator_barangay_code") or profile.get("operator_barangay_name"):
+        role_set.add("operator")
+
+    if profile.get("household_id"):
+        role_set.add("household")
+
+    status = str(profile.get("status") or "").lower()
+    if status in ("pending", "rejected"):
+        role_set.add("household")
+
+    primary = profile.get("role")
+    if primary in ("operator", "household"):
+        role_set.add(primary)
+
+    if conn and auth_user_id:
+        reg = fetchone(
+            conn,
+            """
+            SELECT 1 AS ok FROM household_registrations
+            WHERE applicant_user_id = ? AND status IN ('pending', 'approved')
+            LIMIT 1
+            """,
+            (auth_user_id,),
+        )
+        if reg:
+            role_set.add("household")
+
+    ordered: list[str] = []
+    if "operator" in role_set:
+        ordered.append("operator")
+    if "household" in role_set:
+        ordered.append("household")
+    return ordered or ["operator"]
+
+
+def _enrich_profile(profile: dict, conn: Any = None, auth_user_id: str | None = None) -> dict:
+    roles = _derive_roles(profile, conn, auth_user_id)
     active = profile.get("role")
     if active not in roles:
         active = roles[0]
     profile["roles"] = roles
-    profile["has_operator"] = has_operator
-    profile["has_household"] = has_household
+    profile["has_operator"] = "operator" in roles
+    profile["has_household"] = "household" in roles
     profile["role"] = active
     return profile
 
 
-def _profile_row_to_dict(row: Any) -> dict:
+def _profile_row_to_dict(row: Any, conn: Any = None, auth_user_id: str | None = None) -> dict:
     data = dict(row)
     data["has_solar"] = bool(data.get("has_solar"))
     data["has_battery"] = bool(data.get("has_battery"))
-    return _enrich_profile(data)
+    return _enrich_profile(data, conn, auth_user_id)
+
+
+def _maybe_backfill_roles(conn: Any, auth_user_id: str, derived: list[str], row: dict) -> None:
+    stored = _parse_roles(row)
+    if set(stored) == set(derived):
+        return
+    conn.execute(
+        "UPDATE user_profiles SET roles = ?, updated_at = ? WHERE id = ?",
+        (_serialize_roles(derived), _utc_now(), auth_user_id),
+    )
 
 
 def get_user_profile(auth_user_id: str) -> dict | None:
@@ -1444,7 +1490,8 @@ def get_user_profile(auth_user_id: str) -> dict | None:
         )
         if not row:
             return None
-        profile = _profile_row_to_dict(row)
+        profile = _profile_row_to_dict(row, conn, auth_user_id)
+        _maybe_backfill_roles(conn, auth_user_id, profile["roles"], dict(row))
         if profile.get("status") == "rejected":
             reg = fetchone(
                 conn,

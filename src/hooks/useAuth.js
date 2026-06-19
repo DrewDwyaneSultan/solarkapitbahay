@@ -3,20 +3,9 @@ import { isSupabaseConfigured, supabase } from '../lib/supabaseClient';
 import { fetchMe } from '../services/authApi';
 
 import { resolveActiveRole } from '../utils/activeRole';
+import { getProfileRoles, profileHasRole } from '../utils/profileRoles';
 
-export function getProfileRoles(profile) {
-  if (!profile) return [];
-  if (Array.isArray(profile.roles) && profile.roles.length) {
-    return profile.roles.filter((r) => r === 'operator' || r === 'household');
-  }
-  const role = String(profile.role ?? '').toLowerCase().trim();
-  if (role === 'household' || role === 'operator') return [role];
-  return [];
-}
-
-export function profileHasRole(profile, role) {
-  return getProfileRoles(profile).includes(role);
-}
+export { getProfileRoles, profileHasRole };
 
 export function getProfileRole(profile, activeRole = null) {
   if (!profile) return null;
