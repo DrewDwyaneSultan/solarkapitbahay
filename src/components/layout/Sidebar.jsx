@@ -2,7 +2,6 @@ import React from 'react';
 import BrandLogo from '../BrandLogo';
 import { navItems } from '../../constants/mockSimulation';
 import { NavIcon } from '../icons/NavIcons';
-import RoleSwitcher from '../auth/RoleSwitcher';
 
 function NavGroup({ title, items, activeId, onNavigate }) {
   return (
@@ -41,9 +40,6 @@ export default function Sidebar({
   onNavigate,
   operator,
   onLogout,
-  profileRoles,
-  activeRole,
-  onSwitchRole,
 }) {
   const initials = operator?.initials ?? 'JU';
   const name = operator?.name ?? 'Juan Ulbenario';
@@ -69,13 +65,6 @@ export default function Sidebar({
           </p>
         </div>
       </div>
-
-      <RoleSwitcher
-        roles={profileRoles}
-        activeRole={activeRole}
-        onSwitch={onSwitchRole}
-        variant="sidebar"
-      />
 
       <nav className="flex-1 px-2 py-2 overflow-y-auto">
         <NavGroup

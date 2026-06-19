@@ -530,7 +530,7 @@ export default function Login({
               </p>
 
               <p className="text-[10px] text-sk-ink-muted text-center mb-4 leading-relaxed">
-                One Google account can hold both roles — use the switcher in the dashboard anytime.
+                Choose operator or household above — sign out and pick the other role if you need to switch later.
               </p>
 
               {session?.user && !needsProfile && (

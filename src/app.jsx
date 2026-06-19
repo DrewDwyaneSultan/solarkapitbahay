@@ -40,10 +40,8 @@ function HouseholdRoutes({
   householdUser,
   accessToken,
   profileRoles,
-  activeRole,
   onLogout,
   onCheckStatus,
-  onSwitchRole,
   onSwitchToOperator,
   checking,
 }) {
@@ -56,7 +54,7 @@ function HouseholdRoutes({
         rejectionReason={householdUser.rejectionReason}
         onLogout={onLogout}
         onCheckStatus={onCheckStatus}
-        onSwitchToOperator={onSwitchToOperator ?? (() => onSwitchRole?.('operator'))}
+        onSwitchToOperator={onSwitchToOperator}
         hasOperatorAccess={profileRoles?.includes('operator')}
         checking={checking}
       />
@@ -73,9 +71,6 @@ function HouseholdRoutes({
         name: householdUser.barangayName ?? 'Barangay',
         householdCode: householdUser.house ?? 'household_code',
       }}
-      profileRoles={profileRoles}
-      activeRole={activeRole}
-      onSwitchRole={onSwitchRole}
       onLogout={onLogout}
     />
   );
@@ -317,10 +312,8 @@ function App() {
         householdUser={profileToUser(auth.profile, 'household')}
         accessToken={auth.session.access_token}
         profileRoles={profileRoles}
-        activeRole={viewRole}
         onLogout={handleLogout}
         onCheckStatus={handleCheckApprovalStatus}
-        onSwitchRole={handleRoleSwitch}
         onSwitchToOperator={handleSwitchToOperator}
         checking={statusChecking}
       />
@@ -378,7 +371,7 @@ function App() {
   }
 
   if (demoUser?.role === 'household') {
-    return <HouseholdRoutes householdUser={demoUser} onLogout={handleLogout} onSwitchRole={handleRoleSwitch} />;
+    return <HouseholdRoutes householdUser={demoUser} onLogout={handleLogout} />;
   }
 
   if (
@@ -431,9 +424,6 @@ function App() {
         barangayName={barangayName}
         barangayCode={barangayCode}
         accessToken={auth.session?.access_token ?? null}
-        profileRoles={profileRoles}
-        activeRole={viewRole ?? 'operator'}
-        onSwitchRole={handleRoleSwitch}
         onLogout={handleLogout}
       />
     );

@@ -13,9 +13,6 @@ const pages = {
 export default function HouseholdMemberApp({
   member,
   barangay,
-  profileRoles,
-  activeRole,
-  onSwitchRole,
   onLogout,
 }) {
   const [activePage, setActivePage] = useState('memberDashboard');
@@ -28,9 +25,6 @@ export default function HouseholdMemberApp({
       barangayName={barangay?.name ?? 'Barangay Name'}
       householdCode={barangay?.householdCode ?? 'household_code'}
       memberName={member?.name ?? 'User'}
-      profileRoles={profileRoles}
-      activeRole={activeRole}
-      onSwitchRole={onSwitchRole}
       onLogout={onLogout}
     >
       <Page

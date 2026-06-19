@@ -2,7 +2,6 @@ import React from 'react';
 import BrandLogo from '../../components/BrandLogo';
 import { NavIcon } from '../../components/icons/NavIcons';
 import { householdMemberNav } from '../../constants/mockSimulation';
-import RoleSwitcher from '../../components/auth/RoleSwitcher';
 
 export default function HouseholdLayout({
   activePage,
@@ -10,9 +9,6 @@ export default function HouseholdLayout({
   barangayName = 'Barangay Name',
   householdCode = 'household_code',
   memberName = 'User',
-  profileRoles,
-  activeRole,
-  onSwitchRole,
   onLogout,
   children,
 }) {
@@ -31,12 +27,6 @@ export default function HouseholdLayout({
           </div>
 
           <div className="flex items-center gap-3">
-            <RoleSwitcher
-              roles={profileRoles}
-              activeRole={activeRole}
-              onSwitch={onSwitchRole}
-              variant="header"
-            />
             <button
               type="button"
               onClick={onLogout}
