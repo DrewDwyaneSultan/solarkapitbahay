@@ -456,6 +456,7 @@ def init_db() -> None:
 
 _db_init_lock = threading.Lock()
 _db_initialized = False
+_auth_schema_migrated = False
 
 
 def _postgres_schema_ready() -> bool:
@@ -1488,7 +1489,10 @@ def _ensure_roles_column(conn: Any) -> None:
 
 def _ensure_auth_schema(conn: Any) -> None:
     """Ensure columns/tables required by auth profile queries exist (idempotent)."""
-    _migrate_onboarding(conn)
+    global _auth_schema_migrated
+    if not _auth_schema_migrated:
+        _migrate_onboarding(conn)
+        _auth_schema_migrated = True
     _ensure_roles_column(conn)
 
 

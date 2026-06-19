@@ -59,7 +59,8 @@ class _PgConn:
         self._last_id: int | None = None
 
     def execute(self, sql: str, params: tuple | list = ()) -> _PgConn:
-        self._cur.execute(sql.replace("?", "%s"), params)
+        pg_sql = sql.replace("%", "%%").replace("?", "%s")
+        self._cur.execute(pg_sql, params)
         if "RETURNING" in sql.upper() and self._cur.description:
             row = self._cur.fetchone()
             if row is not None and len(row) > 0:
@@ -67,7 +68,8 @@ class _PgConn:
         return self
 
     def executemany(self, sql: str, params_list: list[tuple]) -> None:
-        self._cur.executemany(sql.replace("?", "%s"), params_list)
+        pg_sql = sql.replace("%", "%%").replace("?", "%s")
+        self._cur.executemany(pg_sql, params_list)
 
     def fetchone(self) -> dict | None:
         if self._cur.description is None:
