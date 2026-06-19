@@ -62,6 +62,10 @@ export function useAuth() {
   const [needsProfile, setNeedsProfile] = useState(false);
   const [authError, setAuthError] = useState('');
   const bootstrappedRef = useRef(false);
+  const sessionUserIdRef = useRef(null);
+  const profileRef = useRef(null);
+
+  profileRef.current = profile;
 
   const refreshProfile = useCallback(async (accessToken) => {
     setAuthError('');
@@ -75,26 +79,15 @@ export function useAuth() {
         setProfile(null);
         setNeedsProfile(true);
       } else {
-        setProfile(null);
+        if (!profileRef.current) {
+          setProfile(null);
+        }
         setNeedsProfile(false);
         setAuthError(err.message ?? 'Could not load profile.');
       }
       return null;
     }
   }, []);
-
-  const shouldSilentRefresh = useCallback((event, nextSession) => {
-    if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') return true;
-    // Tab/session sync for the same user — keep UI visible while refreshing.
-    if (
-      (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') &&
-      bootstrappedRef.current &&
-      nextSession?.user?.id
-    ) {
-      return profile?.id === nextSession.user.id && profile != null;
-    }
-    return false;
-  }, [profile?.id]);
 
   useEffect(() => {
     if (!isSupabaseConfigured() || !supabase) {
@@ -107,6 +100,7 @@ export function useAuth() {
     supabase.auth.getSession().then(({ data: { session: current } }) => {
       if (!active) return;
       setSession(current);
+      sessionUserIdRef.current = current?.user?.id ?? null;
       if (current?.access_token) {
         refreshProfile(current.access_token).finally(() => {
           if (active) {
@@ -124,29 +118,44 @@ export function useAuth() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, nextSession) => {
       setSession(nextSession);
+
       if (nextSession?.access_token) {
-        if (shouldSilentRefresh(event, nextSession)) {
+        const userId = nextSession.user?.id ?? null;
+        const sameUser = Boolean(userId && sessionUserIdRef.current === userId);
+        const keepUi =
+          sameUser ||
+          (bootstrappedRef.current && profileRef.current != null) ||
+          event === 'TOKEN_REFRESHED' ||
+          event === 'USER_UPDATED';
+
+        sessionUserIdRef.current = userId;
+
+        if (keepUi) {
           refreshProfile(nextSession.access_token);
           return;
         }
+
         setProfile(null);
         setLoading(true);
         refreshProfile(nextSession.access_token).finally(() => {
           bootstrappedRef.current = true;
           setLoading(false);
         });
-      } else {
-        setProfile(null);
-        setNeedsProfile(false);
-        setLoading(false);
+        return;
       }
+
+      sessionUserIdRef.current = null;
+      setProfile(null);
+      setNeedsProfile(false);
+      setLoading(false);
+      bootstrappedRef.current = true;
     });
 
     return () => {
       active = false;
       subscription.unsubscribe();
     };
-  }, [refreshProfile, shouldSilentRefresh]);
+  }, [refreshProfile]);
 
   const signOut = useCallback(async () => {
     if (isSupabaseConfigured() && supabase) {
