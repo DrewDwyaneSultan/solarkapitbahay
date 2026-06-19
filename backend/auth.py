@@ -32,7 +32,11 @@ def _get_jwks_client() -> PyJWKClient | None:
     if not base:
         return None
     if _jwks_client is None:
-        _jwks_client = PyJWKClient(f"{base}/auth/v1/.well-known/jwks.json", cache_keys=True)
+        _jwks_client = PyJWKClient(
+            f"{base}/auth/v1/.well-known/jwks.json",
+            cache_keys=True,
+            timeout=8,
+        )
     return _jwks_client
 
 

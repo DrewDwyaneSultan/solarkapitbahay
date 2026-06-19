@@ -177,6 +177,13 @@ function App() {
             </p>
             <button
               type="button"
+              onClick={() => auth.refreshProfile(auth.session.access_token)}
+              className="w-full h-10 rounded-md bg-sk-accent text-white text-sm font-semibold mb-2"
+            >
+              Retry
+            </button>
+            <button
+              type="button"
               onClick={handleLogout}
               className="w-full h-10 rounded-md border border-sk-card-border/70 text-sm font-semibold"
             >

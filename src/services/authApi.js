@@ -1,9 +1,10 @@
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
-const API_TIMEOUT_MS = 12000;
+const API_TIMEOUT_MS = 25000;
+const AUTH_ME_RETRIES = 2;
 
-async function fetchWithTimeout(url, options = {}) {
+async function fetchWithTimeout(url, options = {}, timeoutMs = API_TIMEOUT_MS) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(url, { ...options, signal: controller.signal });
   } finally {
@@ -25,31 +26,45 @@ export async function fetchAuthStatus() {
 }
 
 export async function fetchMe(accessToken) {
-  let res;
-  try {
-    res = await fetchWithTimeout(`${API_BASE}/api/auth/me`, {
-      headers: authHeaders(accessToken),
-    });
-  } catch (err) {
-    if (err.name === 'AbortError') {
-      const timeoutErr = new Error('Backend timed out. Try again in a moment.');
-      timeoutErr.status = 504;
-      throw timeoutErr;
+  let lastErr;
+  for (let attempt = 0; attempt < AUTH_ME_RETRIES; attempt += 1) {
+    if (attempt > 0) {
+      await new Promise((r) => setTimeout(r, 1500));
     }
-    throw err;
+    try {
+      const res = await fetchWithTimeout(`${API_BASE}/api/auth/me`, {
+        headers: authHeaders(accessToken),
+      });
+      if (res.status === 404) {
+        const err = new Error('Profile not found');
+        err.status = 404;
+        throw err;
+      }
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        const err = new Error(body.detail ?? `Auth failed (${res.status})`);
+        err.status = res.status;
+        throw err;
+      }
+      return res.json();
+    } catch (err) {
+      lastErr = err;
+      if (err.status === 404 || err.status === 401 || err.status === 403) {
+        throw err;
+      }
+      if (err.name !== 'AbortError' && !err.status) {
+        throw err;
+      }
+    }
   }
-  if (res.status === 404) {
-    const err = new Error('Profile not found');
-    err.status = 404;
-    throw err;
+  if (lastErr?.name === 'AbortError') {
+    const timeoutErr = new Error(
+      'Backend timed out. The server may be waking up — tap Retry or wait a few seconds.',
+    );
+    timeoutErr.status = 504;
+    throw timeoutErr;
   }
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    const err = new Error(body.detail ?? `Auth failed (${res.status})`);
-    err.status = res.status;
-    throw err;
-  }
-  return res.json();
+  throw lastErr ?? new Error('Could not load profile.');
 }
 
 export async function saveProfile(accessToken, profile) {

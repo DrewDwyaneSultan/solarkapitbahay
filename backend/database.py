@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
 import secrets
 import string
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -426,14 +428,6 @@ def _migrate_onboarding(conn) -> None:
     )
 
 
-def get_connection():
-    """Backward-compatible helper — prefer db_connection() context manager."""
-    import warnings
-
-    warnings.warn("get_connection() is deprecated; use db_connection()", DeprecationWarning, stacklevel=2)
-    return db_connection().__enter__()
-
-
 def init_db() -> None:
     if use_postgres():
         schema_path = Path(__file__).resolve().parent.parent / "supabase" / "schema.sql"
@@ -449,6 +443,48 @@ def init_db() -> None:
             _migrate_simulation_runs_sqlite(conn)
             _migrate_user_profiles_sqlite(conn)
             _migrate_onboarding(conn)
+
+
+_db_init_lock = threading.Lock()
+_db_initialized = False
+
+
+def _postgres_schema_ready() -> bool:
+    if not use_postgres():
+        return False
+    try:
+        with db_connection() as conn:
+            row = fetchone(
+                conn,
+                """
+                SELECT 1 AS ok FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name = 'user_profiles'
+                LIMIT 1
+                """,
+            )
+        return bool(row)
+    except Exception:
+        return False
+
+
+def ensure_app_db() -> None:
+    """Idempotent DB init — fast path on Vercel when schema already exists."""
+    global _db_initialized
+    if _db_initialized:
+        return
+    with _db_init_lock:
+        if _db_initialized:
+            return
+        if os.getenv("VERCEL") and _postgres_schema_ready():
+            try:
+                seed_database()
+            except Exception:
+                pass
+            _db_initialized = True
+            return
+        init_db()
+        seed_database()
+        _db_initialized = True
 
 
 def _migrate_simulation_runs_sqlite(conn) -> None:
@@ -1294,22 +1330,25 @@ def _profile_row_to_dict(row: Any) -> dict:
 
 def get_user_profile(auth_user_id: str) -> dict | None:
     with db_connection() as conn:
-        row = fetchone(conn, "SELECT * FROM user_profiles WHERE id = ?", (auth_user_id,))
-    if not row:
-        return None
-    profile = _profile_row_to_dict(row)
-    if profile.get("household_id"):
-        hh = get_household(profile["household_id"])
-        if hh:
-            profile["circuit_name"] = hh.get("circuit_name")
-            profile["house_label"] = hh.get("head_name")
-    if profile.get("barangay_id"):
-        bg = get_barangay(int(profile["barangay_id"]))
-        if bg:
-            profile["barangay_name"] = bg.get("name")
-            profile["barangay_code"] = bg.get("barangay_code")
-    if profile.get("status") == "rejected":
-        with db_connection() as conn:
+        row = fetchone(
+            conn,
+            """
+            SELECT p.*,
+                   h.circuit_name,
+                   h.head_name AS house_label,
+                   b.name AS barangay_name,
+                   b.barangay_code
+            FROM user_profiles p
+            LEFT JOIN households h ON h.id = p.household_id
+            LEFT JOIN barangays b ON b.id = p.barangay_id
+            WHERE p.id = ?
+            """,
+            (auth_user_id,),
+        )
+        if not row:
+            return None
+        profile = _profile_row_to_dict(row)
+        if profile.get("status") == "rejected":
             reg = fetchone(
                 conn,
                 """
@@ -1320,8 +1359,8 @@ def get_user_profile(auth_user_id: str) -> dict | None:
                 """,
                 (auth_user_id,),
             )
-        if reg and reg.get("rejection_reason"):
-            profile["rejection_reason"] = reg["rejection_reason"]
+            if reg and reg.get("rejection_reason"):
+                profile["rejection_reason"] = reg["rejection_reason"]
     return profile
 
 

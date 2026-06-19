@@ -21,13 +21,13 @@ from database import (
     create_operator_household,
     db_status,
     delete_operator_household,
+    ensure_app_db,
     get_active_dataset,
     get_barangay_for_operator,
     get_household,
     get_run,
     get_user_profile,
     household_count,
-    init_db,
     list_households,
     list_registrations,
     list_runs,
@@ -36,7 +36,6 @@ from database import (
     reject_registration,
     reset_barangay_mock_data,
     save_run,
-    seed_database,
     update_operator_household,
     upsert_user_profile,
 )
@@ -164,19 +163,25 @@ def on_startup() -> None:
     app.state.db_error = None
     app.state.seed_error = None
     app.state.mqtt_bridge = start_mqtt_bridge()
+    # On Vercel, defer heavy init to first request so auth/me responds before cold-start timeout.
+    if os.getenv("VERCEL"):
+        return
     try:
-        init_db()
+        ensure_app_db()
         app.state.db_ready = True
     except Exception as exc:
         app.state.db_error = str(exc)
-    try:
-        seed_database()
-    except Exception as exc:
-        app.state.seed_error = str(exc)
+    else:
+        app.state.seed_error = None
 
 
 @router.get("/health")
 def health() -> dict:
+    try:
+        ensure_app_db()
+        app.state.db_ready = True
+    except Exception as exc:
+        app.state.db_error = str(exc)
     payload = {"status": "ok", "service": "solarkapitbahay-api", **db_status()}
     payload["auth_configured"] = auth_configured()
     payload["mqtt_bridge"] = getattr(app.state, "mqtt_bridge", None)
@@ -222,6 +227,7 @@ def auth_status() -> dict:
 
 @router.get("/auth/me")
 def auth_me(user_id: str = Depends(get_auth_user_id)) -> dict:
+    ensure_app_db()
     profile = get_user_profile(user_id)
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found. Complete registration.")
@@ -234,6 +240,7 @@ def auth_save_profile(
     user_id: str = Depends(get_auth_user_id),
     email: str = Depends(get_token_email),
 ) -> dict:
+    ensure_app_db()
     try:
         return upsert_user_profile(
             user_id,
@@ -353,8 +360,8 @@ def seed_if_empty() -> dict:
     if household_count() > 0:
         return {"seeded": False, "reason": "already_seeded", "households": household_count()}
     try:
-        init_db()
-        result = seed_database(force=False)
+        ensure_app_db()
+        result = {"seeded": True, "households": household_count()}
         return result
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc

@@ -60,9 +60,9 @@ class _PgConn:
 
     def execute(self, sql: str, params: tuple | list = ()) -> _PgConn:
         self._cur.execute(sql.replace("?", "%s"), params)
-        if self._cur.description and "RETURNING" in sql.upper():
+        if "RETURNING" in sql.upper() and self._cur.description:
             row = self._cur.fetchone()
-            if row:
+            if row is not None and len(row) > 0:
                 self._last_id = row[0]
         return self
 
@@ -70,6 +70,8 @@ class _PgConn:
         self._cur.executemany(sql.replace("?", "%s"), params_list)
 
     def fetchone(self) -> dict | None:
+        if self._cur.description is None:
+            return None
         row = self._cur.fetchone()
         if row is None:
             return None
@@ -77,6 +79,8 @@ class _PgConn:
         return dict(zip(cols, row))
 
     def fetchall(self) -> list[dict]:
+        if self._cur.description is None:
+            return []
         rows = self._cur.fetchall()
         if not rows:
             return []
@@ -114,7 +118,7 @@ def db_connection() -> Iterator[Any]:
     if use_postgres():
         import psycopg2
 
-        connect_kwargs: dict[str, Any] = {}
+        connect_kwargs: dict[str, Any] = {"connect_timeout": 8}
         if DATABASE_URL and "sslmode=" not in DATABASE_URL:
             connect_kwargs["sslmode"] = "require"
 
