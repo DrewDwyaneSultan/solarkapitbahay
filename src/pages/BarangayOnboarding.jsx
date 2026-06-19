@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import BrandLogo from '../components/BrandLogo';
-import PlacesAutocomplete from '../components/maps/PlacesAutocomplete';
 import { registerBarangay } from '../services/registrationApi';
 
 export default function BarangayOnboarding({ accessToken, operatorName, onComplete }) {
@@ -8,24 +7,9 @@ export default function BarangayOnboarding({ accessToken, operatorName, onComple
   const [contactEmail, setContactEmail] = useState('');
   const [city, setCity] = useState('');
   const [province, setProvince] = useState('');
-  const [address, setAddress] = useState('');
-  const [lat, setLat] = useState(null);
-  const [lon, setLon] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
-
-  const handlePlace = (place) => {
-    setAddress(place.formatted_address);
-    if (place.city_municipality) setCity(place.city_municipality);
-    if (place.province) setProvince(place.province);
-    setLat(place.lat);
-    setLon(place.lng);
-    if (!name && place.formatted_address) {
-      const match = place.formatted_address.match(/Barangay\s+[\w\s]+/i);
-      if (match) setName(match[0]);
-    }
-  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -37,8 +21,8 @@ export default function BarangayOnboarding({ accessToken, operatorName, onComple
         contact_email: contactEmail.trim(),
         city_municipality: city.trim() || null,
         province: province.trim() || null,
-        location_lat: lat,
-        location_lon: lon,
+        location_lat: null,
+        location_lon: null,
       });
       setResult(saved);
       onComplete?.(saved);
@@ -107,13 +91,6 @@ export default function BarangayOnboarding({ accessToken, operatorName, onComple
             onChange={setContactEmail}
             required
             placeholder="operator@barangay.gov.ph"
-          />
-          <PlacesAutocomplete
-            label="Find on map (optional)"
-            value={address}
-            onChange={setAddress}
-            onPlaceSelect={handlePlace}
-            placeholder="Search: Barangay name, Davao City…"
           />
           <div className="grid grid-cols-2 gap-3">
             <Field label="City / municipality" value={city} onChange={setCity} placeholder="Davao City" />
