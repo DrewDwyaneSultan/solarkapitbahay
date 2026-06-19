@@ -151,6 +151,63 @@ def expand_to_household_rows(
     return rows
 
 
+def expand_single_household(
+    household_id: str,
+    head_name: str,
+    *,
+    purok: str = "Purok 1",
+    has_battery: bool = True,
+    seed: int | None = None,
+    path: Path | None = None,
+) -> list[dict[str, str]]:
+    """Generate 24 h mock energy rows for one household (clustering / simulation parity)."""
+    src = path or resolve_dataset_path()
+    if src is None or not src.is_file():
+        return []
+
+    hourly = parse_hourly_rows(src)
+    if not hourly:
+        return []
+
+    if seed is None:
+        seed = sum(ord(c) for c in household_id) + 42
+
+    rng = random.Random(seed)
+    rows: list[dict[str, str]] = []
+    hourly_surplus: list[float] = []
+
+    for row in hourly:
+        load = round(rng.uniform(_f(row, "load_min_kw"), _f(row, "load_max_kw")), 4)
+        solar = _f(row, "solar_power_kw")
+        net_surplus = solar - load
+        net_load = load - solar
+        grid_import = max(0.0, net_load)
+        grid_export = max(0.0, -net_load)
+
+        hourly_surplus.append(net_surplus)
+        rows.append({
+            "household_id": household_id,
+            "head_name": head_name,
+            "purok": purok,
+            "hour": row.get("hour", ""),
+            "load_kwh": str(load),
+            "solar_kwh": str(round(solar, 4)),
+            "net_load_kwh": str(round(net_load, 4)),
+            "grid_import_kwh": str(round(grid_import, 4)),
+            "grid_export_kwh": str(round(grid_export, 4)),
+            "tou_period": row.get("tou_period", ""),
+            "tou_rate_php": row.get("tou_rate_php", ""),
+            "has_battery": "1" if has_battery else "0",
+            "income_tier": "mid",
+        })
+
+    _final_soc, soc_trace = _simulate_soc(hourly_surplus) if has_battery else (0.0, [0.0] * len(rows))
+    for i, soc in enumerate(soc_trace):
+        rows[i]["battery_soc_pct"] = str(soc if has_battery else 0)
+
+    return rows
+
+
 def dataset_info(path: Path | None = None) -> dict[str, Any]:
     src = path or resolve_dataset_path()
     meta = src.read_text(encoding="utf-8") if src and src.is_file() else ""

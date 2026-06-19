@@ -5,6 +5,7 @@ import LiveStatusBadge from '../components/ui/LiveStatusBadge';
 import { SunLogoIcon } from '../components/icons/NavIcons';
 import TransferAnimationOverlay from '../components/energy/TransferAnimationOverlay';
 import { getHouseCards, useLiveData } from '../hooks/useLiveData';
+import { executeManualTransfer } from '../services/liveApi';
 import { isTransferActive } from '../utils/liveStatus';
 
 function fmtCountdown(sec) {
@@ -13,7 +14,7 @@ function fmtCountdown(sec) {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-export default function EnergyTransferPage() {
+export default function EnergyTransferPage({ accessToken }) {
   const liveData = useLiveData();
   const [mode, setMode] = useState('auto');
   const [autoMode, setAutoMode] = useState(true);
@@ -23,6 +24,8 @@ export default function EnergyTransferPage() {
   const [recipients, setRecipients] = useState([]);
   const [scanning, setScanning] = useState(false);
   const [showTransferAnim, setShowTransferAnim] = useState(false);
+  const [manualBusy, setManualBusy] = useState(false);
+  const [manualNote, setManualNote] = useState('');
 
   const txHistory = liveData.transferLog ?? [];
 
@@ -104,6 +107,34 @@ export default function EnergyTransferPage() {
   const onTransferComplete = () => {
     setShowTransferAnim(false);
     setCountdown(300);
+  };
+
+  const runManualTransfer = async () => {
+    if (!accessToken) {
+      setManualNote('Sign in as operator to send MQTT commands.');
+      setShowTransferAnim(true);
+      return;
+    }
+    setManualBusy(true);
+    setManualNote('');
+    try {
+      const toHouse = recipients[0]?.house ?? 'House B';
+      const result = await executeManualTransfer(accessToken, {
+        fromHouse,
+        toHouse,
+        watts: totalSending,
+      });
+      if (result.published) {
+        setManualNote(`MQTT command sent to ${result.topic}. ${result.note ?? ''}`);
+      } else {
+        setManualNote(result.reason ?? result.note ?? 'Command was not published.');
+      }
+      setShowTransferAnim(true);
+    } catch (err) {
+      setManualNote(err.message ?? 'Manual transfer failed.');
+    } finally {
+      setManualBusy(false);
+    }
   };
 
   const transferTarget = useMemo(() => recipients[0]?.house ?? 'House B', [recipients]);
@@ -263,8 +294,15 @@ export default function EnergyTransferPage() {
         ) : (
           <div className="rounded-2xl border-2 border-amber-300/80 bg-gradient-to-br from-amber-50/90 to-orange-50/40 p-4 space-y-4">
             <p className="text-sm font-semibold text-amber-950">
-              Manual override — UI preview only. Real transfers run on ESP32 firmware (Greedy + relays).
+              Manual override — sends an MQTT command to the broker. House A/B firmware must
+              subscribe to <code className="text-xs">solar/command/transfer</code> to act on it;
+              until then Greedy auto-transfer on the ESP32 still runs independently.
             </p>
+            {manualNote && (
+              <p className="text-xs text-amber-900 bg-white/70 border border-amber-200 rounded-lg px-3 py-2">
+                {manualNote}
+              </p>
+            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <Card title="From (Surplus)" className="!shadow-none border-amber-200/60">
@@ -325,11 +363,11 @@ export default function EnergyTransferPage() {
               </div>
               <button
                 type="button"
-                disabled={!canTransfer}
-                onClick={() => setShowTransferAnim(true)}
+                disabled={!canTransfer || manualBusy}
+                onClick={runManualTransfer}
                 className="w-full h-11 rounded-xl bg-amber-700 text-white font-semibold disabled:opacity-50 hover:bg-amber-800"
               >
-                Execute Manual Transfer
+                {manualBusy ? 'Sending…' : 'Execute Manual Transfer'}
               </button>
             </div>
           </div>

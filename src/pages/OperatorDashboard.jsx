@@ -50,6 +50,8 @@ export default function OperatorDashboard({
         <DashboardPage operatorName={operator?.name} />
       ) : activePage === 'households' ? (
         <HouseholdsPage accessToken={accessToken} barangayCode={barangayCode} />
+      ) : activePage === 'energyTransfer' ? (
+        <EnergyTransferPage accessToken={accessToken} />
       ) : (
         <PageView />
       )}

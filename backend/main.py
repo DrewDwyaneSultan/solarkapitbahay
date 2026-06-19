@@ -20,6 +20,7 @@ from database import (
     approve_registration,
     create_operator_household,
     db_status,
+    delete_operator_household,
     get_active_dataset,
     get_barangay_for_operator,
     get_household,
@@ -33,8 +34,10 @@ from database import (
     lookup_barangay_public,
     register_barangay,
     reject_registration,
+    reset_barangay_mock_data,
     save_run,
     seed_database,
+    update_operator_household,
     upsert_user_profile,
 )
 from auth import auth_configured, get_auth_user_id, get_token_email
@@ -43,7 +46,13 @@ from notifications import (
     send_registration_approved,
     send_registration_rejected,
 )
-from mqtt_bridge import get_live_payload, get_mqtt_status, ingest_mqtt_message, start_mqtt_bridge
+from mqtt_bridge import (
+    get_live_payload,
+    get_mqtt_status,
+    ingest_mqtt_message,
+    publish_manual_transfer,
+    start_mqtt_bridge,
+)
 
 # On Vercel Services, routePrefix "/api" is stripped before the request hits FastAPI.
 # Locally (and on Render), routes keep the "/api" prefix to match the Vite proxy.
@@ -107,6 +116,21 @@ class HouseholdCreateRequest(BaseModel):
     purok: str | None = Field(default=None, max_length=120)
     has_solar: bool = False
     has_battery: bool = False
+
+
+class HouseholdUpdateRequest(BaseModel):
+    head_name: str | None = Field(default=None, min_length=2, max_length=120)
+    address: str | None = Field(default=None, max_length=300)
+    purok: str | None = Field(default=None, max_length=120)
+    has_solar: bool | None = None
+    has_battery: bool | None = None
+    status: Literal["active", "pending", "inactive"] | None = None
+
+
+class ManualTransferRequest(BaseModel):
+    from_house: Literal["A", "B", "House A", "House B"] = "A"
+    to_house: Literal["A", "B", "House A", "House B"] = "B"
+    watts: int = Field(ge=0, le=500, default=100)
 
 
 class MqttIngestBody(BaseModel):
@@ -446,6 +470,56 @@ def household_create(
         has_battery=body.has_battery,
     )
     return row
+
+
+@router.post("/households/reset-mock-data")
+def households_reset_mock(barangay: dict = Depends(_operator_barangay)) -> dict:
+    """Restore the original 15 mock households (removes operator-added homes)."""
+    try:
+        return reset_barangay_mock_data(int(barangay["id"]), str(barangay["barangay_code"]))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.patch("/households/{household_id}")
+def household_update(
+    household_id: str,
+    body: HouseholdUpdateRequest,
+    barangay: dict = Depends(_operator_barangay),
+) -> dict:
+    try:
+        return update_operator_household(
+            household_id,
+            int(barangay["id"]),
+            head_name=body.head_name,
+            address=body.address,
+            purok=body.purok,
+            has_solar=body.has_solar,
+            has_battery=body.has_battery,
+            status=body.status,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete("/households/{household_id}")
+def household_delete(
+    household_id: str,
+    barangay: dict = Depends(_operator_barangay),
+) -> dict:
+    try:
+        return delete_operator_household(household_id, int(barangay["id"]))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/live/manual-transfer")
+def live_manual_transfer(
+    body: ManualTransferRequest,
+    _profile: dict = Depends(_require_operator),
+) -> dict:
+    """Publish a manual transfer command over MQTT (requires firmware subscriber)."""
+    return publish_manual_transfer(body.from_house, body.to_house, body.watts)
 
 
 @router.get("/households/{household_id}")

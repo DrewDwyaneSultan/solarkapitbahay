@@ -11,3 +11,21 @@ export async function fetchMqttStatus() {
   if (!res.ok) throw new Error('MQTT status unavailable.');
   return res.json();
 }
+
+export async function executeManualTransfer(accessToken, { fromHouse, toHouse, watts }) {
+  const res = await fetch(`${API_BASE}/api/live/manual-transfer`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({
+      from_house: fromHouse,
+      to_house: toHouse,
+      watts,
+    }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.detail ?? 'Manual transfer command failed.');
+  return body;
+}

@@ -85,3 +85,31 @@ export async function createHousehold(accessToken, payload) {
   if (!res.ok) await parseError(res);
   return res.json();
 }
+
+export async function updateHousehold(accessToken, householdId, payload) {
+  const res = await fetch(`${API_BASE}/api/households/${encodeURIComponent(householdId)}`, {
+    method: 'PATCH',
+    headers: authHeaders(accessToken),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+export async function deleteHousehold(accessToken, householdId) {
+  const res = await fetch(`${API_BASE}/api/households/${encodeURIComponent(householdId)}`, {
+    method: 'DELETE',
+    headers: authHeaders(accessToken),
+  });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+export async function resetMockHouseholds(accessToken) {
+  const res = await fetch(`${API_BASE}/api/households/reset-mock-data`, {
+    method: 'POST',
+    headers: authHeaders(accessToken),
+  });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}

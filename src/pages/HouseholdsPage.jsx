@@ -9,13 +9,16 @@ import { CIRCUIT_HOUSES, resolveCircuit } from '../constants/circuits';
 import {
   approveRegistration,
   createHousehold,
+  deleteHousehold,
   fetchHouseholdsByBarangay,
   fetchRegistrations,
   rejectRegistration,
+  resetMockHouseholds,
+  updateHousehold,
 } from '../services/registrationApi';
 
 export default function HouseholdsPage({ accessToken, barangayCode }) {
-  const { data: clusterData } = useClustering();
+  const { data: clusterData, reload: reloadClustering } = useClustering();
   const liveData = useLiveData();
   const actionById = useMemo(() => {
     const map = {};
@@ -36,12 +39,22 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [showEditForm, setShowEditForm] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [addForm, setAddForm] = useState({
     headName: '',
     address: '',
     purok: '',
     hasSolar: false,
     hasBattery: false,
+  });
+  const [editForm, setEditForm] = useState({
+    headName: '',
+    address: '',
+    purok: '',
+    hasSolar: false,
+    hasBattery: false,
+    status: 'active',
   });
 
   const loadData = async () => {
@@ -59,6 +72,7 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
           id: r.id,
           headName: r.head_name,
           address: r.address ?? r.purok ?? '—',
+          purok: r.purok ?? '',
           hasSolar: r.has_solar,
           hasBattery: r.has_battery,
           status: r.status ?? 'active',
@@ -112,6 +126,89 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
 
   const notify = (message, tone = 'success') => setToast({ message, tone });
 
+  const refreshAll = async () => {
+    await loadData();
+    reloadClustering();
+  };
+
+  const openEdit = (row) => {
+    setSelectedId(row.id);
+    setSelectedReg(null);
+    setShowEditForm(true);
+    setEditForm({
+      headName: row.headName,
+      address: row.address === '—' ? '' : row.address,
+      purok: row.purok || '',
+      hasSolar: row.hasSolar,
+      hasBattery: row.hasBattery,
+      status: row.status,
+    });
+  };
+
+  const submitEditHousehold = async (e) => {
+    e.preventDefault();
+    if (!accessToken || !selectedId || !editForm.headName.trim()) return;
+    setBusy(true);
+    try {
+      await updateHousehold(accessToken, selectedId, {
+        head_name: editForm.headName.trim(),
+        address: editForm.address.trim() || null,
+        purok: editForm.purok.trim() || null,
+        has_solar: editForm.hasSolar,
+        has_battery: editForm.hasBattery,
+        status: editForm.status,
+      });
+      setShowEditForm(false);
+      notify(`Updated ${editForm.headName.trim()}. Clustering refreshed.`);
+      await refreshAll();
+    } catch (err) {
+      notify(err.message ?? 'Could not update household.', 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmDeleteHousehold = async (row) => {
+    if (!accessToken || !row) return;
+    const ok = window.confirm(
+      `Delete ${row.headName} (${row.id})? This removes mock energy data and unlinks any claimed accounts.`,
+    );
+    if (!ok) return;
+    setBusy(true);
+    try {
+      await deleteHousehold(accessToken, row.id);
+      if (selectedId === row.id) {
+        setSelectedId(null);
+        setShowEditForm(false);
+      }
+      notify(`Deleted ${row.id}.`, 'error');
+      await refreshAll();
+    } catch (err) {
+      notify(err.message ?? 'Could not delete household.', 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runResetMockData = async () => {
+    if (!accessToken) return;
+    setBusy(true);
+    try {
+      const result = await resetMockHouseholds(accessToken);
+      setShowResetConfirm(false);
+      setSelectedId(null);
+      setShowEditForm(false);
+      notify(
+        `Restored ${result.households ?? 15} mock households. Operator-added homes were removed.`,
+      );
+      await refreshAll();
+    } catch (err) {
+      notify(err.message ?? 'Reset failed.', 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const approveReg = async (reg) => {
     if (!accessToken) return;
     setBusy(true);
@@ -119,7 +216,7 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
       await approveRegistration(accessToken, reg.id);
       setSelectedReg(null);
       notify(`Approved registration for ${reg.name}.`);
-      await loadData();
+      await refreshAll();
     } catch (err) {
       notify(err.message ?? 'Approve failed.', 'error');
     } finally {
@@ -135,7 +232,7 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
       setSelectedReg(null);
       setRejectReason('');
       notify(`Rejected registration for ${reg.name}.`, 'error');
-      await loadData();
+      await refreshAll();
     } catch (err) {
       notify(err.message ?? 'Reject failed.', 'error');
     } finally {
@@ -157,8 +254,8 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
       });
       setAddForm({ headName: '', address: '', purok: '', hasSolar: false, hasBattery: false });
       setShowAddForm(false);
-      notify(`Added ${created.head_name ?? addForm.headName} (${created.id}).`);
-      await loadData();
+      notify(`Added ${created.head_name ?? addForm.headName} (${created.id}). Clustering updated.`);
+      await refreshAll();
     } catch (err) {
       notify(err.message ?? 'Could not add household.', 'error');
     } finally {
@@ -234,10 +331,48 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
       </Card>
 
       <Card title="Add Household" className="mb-6">
-        <p className="text-xs text-sk-ink-muted mb-3">
-          Manually register a home in your barangay. They receive a household code to claim during
-          sign-up. Virtual hub homes from onboarding are listed below; use this for extra homes.
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+          <p className="text-xs text-sk-ink-muted max-w-2xl">
+            Manually register a home in your barangay. New homes get mock 24 h energy profiles
+            automatically so they appear on the Battery Clustering chart (charge / discharge /
+            balanced).
+          </p>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => setShowResetConfirm(true)}
+            className="h-9 px-3 rounded-lg border border-rose-300 bg-rose-50 text-rose-900 text-xs font-semibold shrink-0 hover:bg-rose-100 disabled:opacity-50"
+          >
+            Reset mock data
+          </button>
+        </div>
+        {showResetConfirm && (
+          <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50/80 p-4">
+            <p className="text-sm text-rose-950 font-semibold mb-1">Restore original 15 households?</p>
+            <p className="text-xs text-rose-900 mb-3">
+              This removes all operator-added homes and restores the default mock dataset. Linked
+              user accounts are unlinked but not deleted.
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={runResetMockData}
+                className="h-9 px-4 rounded-lg bg-rose-700 text-white text-sm font-semibold disabled:opacity-50"
+              >
+                Yes, reset
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setShowResetConfirm(false)}
+                className="h-9 px-4 rounded-lg border border-rose-300 bg-white text-sm font-semibold"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
         {!showAddForm ? (
           <button
             type="button"
@@ -397,23 +532,42 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
                           label={actionById[r.id].action_label}
                         />
                       ) : (
-                        <span className="text-xs text-sk-ink-muted">—</span>
+                        <span className="text-xs text-amber-800" title="Edit & save to generate mock energy profile">
+                          No profile
+                        </span>
                       )}
                     </td>
                     <td className="py-3">
                       <StatusChip status={r.status} />
                     </td>
                     <td className="py-3 text-right">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedId(r.id);
-                          setSelectedReg(null);
-                        }}
-                        className="h-8 px-3 rounded-md border border-sk-card-border/60 bg-white text-xs font-semibold hover:bg-sk-accent/10 hover:border-sk-accent"
-                      >
-                        View
-                      </button>
+                      <div className="inline-flex gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedId(r.id);
+                            setSelectedReg(null);
+                          }}
+                          className="h-8 px-3 rounded-md border border-sk-card-border/60 bg-white text-xs font-semibold hover:bg-sk-accent/10 hover:border-sk-accent"
+                        >
+                          View
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openEdit(r)}
+                          className="h-8 px-3 rounded-md border border-sk-card-border/60 bg-white text-xs font-semibold hover:bg-sky-50"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => confirmDeleteHousehold(r)}
+                          className="h-8 px-3 rounded-md border border-rose-200 bg-rose-50 text-xs font-semibold text-rose-900 hover:bg-rose-100 disabled:opacity-50"
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -482,7 +636,92 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
           </Card>
 
           <Card title="Household Details">
-            {selected ? (
+            {showEditForm && selected ? (
+              <form onSubmit={submitEditHousehold} className="space-y-3">
+                <p className="text-xs text-sk-ink-muted mb-2">
+                  Editing <strong className="font-mono">{selected.id}</strong> — mock energy profile
+                  regenerates on save.
+                </p>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-sk-ink-muted mb-1.5">
+                    Head of household *
+                  </label>
+                  <input
+                    required
+                    value={editForm.headName}
+                    onChange={(e) => setEditForm((f) => ({ ...f, headName: e.target.value }))}
+                    className="w-full h-10 rounded-md border border-sk-card-border/60 bg-white px-3 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-sk-ink-muted mb-1.5">
+                    Purok / zone
+                  </label>
+                  <input
+                    value={editForm.purok}
+                    onChange={(e) => setEditForm((f) => ({ ...f, purok: e.target.value }))}
+                    className="w-full h-10 rounded-md border border-sk-card-border/60 bg-white px-3 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-sk-ink-muted mb-1.5">
+                    Address
+                  </label>
+                  <input
+                    value={editForm.address}
+                    onChange={(e) => setEditForm((f) => ({ ...f, address: e.target.value }))}
+                    className="w-full h-10 rounded-md border border-sk-card-border/60 bg-white px-3 text-sm"
+                  />
+                </div>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={editForm.hasSolar}
+                    onChange={(e) => setEditForm((f) => ({ ...f, hasSolar: e.target.checked }))}
+                  />
+                  Has solar
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={editForm.hasBattery}
+                    onChange={(e) => setEditForm((f) => ({ ...f, hasBattery: e.target.checked }))}
+                  />
+                  Has battery
+                </label>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-sk-ink-muted mb-1.5">
+                    Status
+                  </label>
+                  <select
+                    value={editForm.status}
+                    onChange={(e) => setEditForm((f) => ({ ...f, status: e.target.value }))}
+                    className="w-full h-10 rounded-md border border-sk-card-border/60 bg-white px-3 text-sm"
+                  >
+                    <option value="active">Active</option>
+                    <option value="pending">Pending</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="submit"
+                    disabled={busy}
+                    className="h-10 px-4 rounded-lg bg-sk-accent text-white text-sm font-semibold disabled:opacity-50"
+                  >
+                    Save changes
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setShowEditForm(false)}
+                    className="h-10 px-4 rounded-lg border border-sk-card-border/60 bg-white text-sm font-semibold"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            ) : selected ? (
               <dl className="space-y-3 text-sm">
                 <DetailRow label="HH ID" value={selected.id} />
                 <DetailRow label="Head" value={selected.headName} />
@@ -519,6 +758,23 @@ export default function HouseholdsPage({ accessToken, barangayCode }) {
                     />
                   </>
                 )}
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => openEdit(selected)}
+                    className="h-9 px-3 rounded-lg border border-sk-card-border/60 bg-white text-xs font-semibold"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => confirmDeleteHousehold(selected)}
+                    className="h-9 px-3 rounded-lg border border-rose-200 bg-rose-50 text-xs font-semibold text-rose-900 disabled:opacity-50"
+                  >
+                    Delete
+                  </button>
+                </div>
               </dl>
             ) : regDetail ? (
               <dl className="space-y-3 text-sm">

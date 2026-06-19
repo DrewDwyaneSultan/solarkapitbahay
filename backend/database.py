@@ -718,6 +718,137 @@ def list_households(barangay_id: int | None = None, claimable_only: bool = False
     return rows
 
 
+def _resolve_dataset_id_for_barangay(conn, barangay_id: int) -> int:
+    """Active dataset for a barangay — reuse existing or fall back to global active dataset."""
+    row = fetchone(
+        conn,
+        """
+        SELECT h.dataset_id
+        FROM hourly_energy_records h
+        JOIN households hh ON hh.id = h.household_id
+        WHERE hh.barangay_id = ?
+        LIMIT 1
+        """,
+        (barangay_id,),
+    )
+    if row:
+        return int(row["dataset_id"])
+
+    row = fetchone(
+        conn,
+        "SELECT id FROM datasets WHERE is_active = 1 ORDER BY id DESC LIMIT 1",
+    )
+    if row:
+        return int(row["id"])
+
+    from merged_dataset_loader import dataset_info
+
+    now = _utc_now()
+    info = dataset_info()
+    return insert_returning_id(
+        conn,
+        """
+        INSERT INTO datasets
+        (dataset_id, source_file, household_count, hourly_rows, location, imported_at, is_active)
+        VALUES (?, ?, ?, ?, ?, ?, 1)
+        """,
+        (
+            f"{info['dataset_id']}_b{barangay_id}",
+            info["source_file"],
+            0,
+            info["hourly_rows"],
+            info["location"],
+            now,
+        ),
+    )
+
+
+def _refresh_dataset_household_count(conn, dataset_id: int) -> None:
+    row = fetchone(
+        conn,
+        """
+        SELECT COUNT(DISTINCT household_id) AS n
+        FROM hourly_energy_records
+        WHERE dataset_id = ?
+        """,
+        (dataset_id,),
+    )
+    count = int(row["n"] if row else 0)
+    conn.execute(
+        "UPDATE datasets SET household_count = ? WHERE id = ?",
+        (count, dataset_id),
+    )
+
+
+def _delete_household_hourly(conn, household_id: str) -> None:
+    conn.execute(
+        "DELETE FROM hourly_energy_records WHERE household_id = ?",
+        (household_id,),
+    )
+
+
+def _insert_household_hourly_rows(
+    conn,
+    dataset_id: int,
+    rows: list[dict[str, str]],
+) -> int:
+    count = 0
+    for row in rows:
+        conn.execute(
+            """
+            INSERT INTO hourly_energy_records
+            (dataset_id, household_id, hour, load_kwh, solar_kwh, net_load_kwh,
+             battery_soc_pct, grid_import_kwh, grid_export_kwh, tou_period, tou_rate_php)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                dataset_id,
+                row["household_id"],
+                int(row["hour"]),
+                float(row["load_kwh"]),
+                float(row["solar_kwh"]),
+                float(row["net_load_kwh"]),
+                float(row.get("battery_soc_pct") or 0),
+                float(row["grid_import_kwh"]),
+                float(row["grid_export_kwh"]),
+                row.get("tou_period") or "",
+                float(row["tou_rate_php"]) if row.get("tou_rate_php") else None,
+            ),
+        )
+        count += 1
+    _refresh_dataset_household_count(conn, dataset_id)
+    return count
+
+
+def attach_mock_hourly_for_household(
+    household_id: str,
+    head_name: str,
+    *,
+    purok: str = "Purok 1",
+    has_battery: bool = True,
+    barangay_id: int,
+    replace: bool = False,
+) -> int:
+    """Attach 24 h synthetic profile so K-means clustering includes this household."""
+    from merged_dataset_loader import expand_single_household
+
+    rows = expand_single_household(
+        household_id,
+        head_name,
+        purok=purok or "Purok 1",
+        has_battery=has_battery,
+    )
+    if not rows:
+        return 0
+
+    with db_connection() as conn:
+        dataset_id = _resolve_dataset_id_for_barangay(conn, barangay_id)
+        if replace:
+            _delete_household_hourly(conn, household_id)
+        _insert_household_hourly_rows(conn, dataset_id, rows)
+    return len(rows)
+
+
 def create_operator_household(
     barangay_id: int,
     barangay_code: str,
@@ -767,7 +898,257 @@ def create_operator_household(
     created = get_household(hid)
     if not created:
         raise RuntimeError("Household insert failed.")
+    attach_mock_hourly_for_household(
+        hid,
+        head_name.strip(),
+        purok=purok,
+        has_battery=has_battery,
+        barangay_id=barangay_id,
+    )
     return created
+
+
+def update_operator_household(
+    household_id: str,
+    barangay_id: int,
+    *,
+    head_name: str | None = None,
+    address: str | None = None,
+    purok: str | None = None,
+    has_solar: bool | None = None,
+    has_battery: bool | None = None,
+    status: str | None = None,
+) -> dict:
+    existing = get_household(household_id)
+    if not existing:
+        raise ValueError("Household not found.")
+    if int(existing["barangay_id"]) != int(barangay_id):
+        raise ValueError("Household is not in your barangay.")
+
+    fields: list[str] = []
+    params: list[Any] = []
+    if head_name is not None:
+        fields.append("head_name = ?")
+        params.append(head_name.strip())
+    if address is not None:
+        fields.append("address = ?")
+        params.append(address)
+    if purok is not None:
+        fields.append("purok = ?")
+        params.append(purok)
+    if has_solar is not None:
+        fields.append("has_solar = ?")
+        params.append(int(has_solar))
+    if has_battery is not None:
+        fields.append("has_battery = ?")
+        params.append(int(has_battery))
+        fields.append("battery_capacity_kwh = ?")
+        params.append(5.0 if has_battery else None)
+    if status is not None:
+        fields.append("status = ?")
+        params.append(status)
+
+    if not fields:
+        return existing
+
+    params.append(household_id)
+    with db_connection() as conn:
+        conn.execute(
+            f"UPDATE households SET {', '.join(fields)} WHERE id = ?",
+            tuple(params),
+        )
+
+    updated = get_household(household_id)
+    if not updated:
+        raise RuntimeError("Household update failed.")
+
+    regen = has_battery is not None or head_name is not None or purok is not None
+    if regen:
+        attach_mock_hourly_for_household(
+            household_id,
+            updated["head_name"],
+            purok=updated.get("purok") or "Purok 1",
+            has_battery=bool(updated["has_battery"]),
+            barangay_id=barangay_id,
+            replace=True,
+        )
+    return updated
+
+
+def delete_operator_household(household_id: str, barangay_id: int) -> dict:
+    existing = get_household(household_id)
+    if not existing:
+        raise ValueError("Household not found.")
+    if int(existing["barangay_id"]) != int(barangay_id):
+        raise ValueError("Household is not in your barangay.")
+
+    with db_connection() as conn:
+        dataset_row = fetchone(
+            conn,
+            """
+            SELECT DISTINCT dataset_id
+            FROM hourly_energy_records
+            WHERE household_id = ?
+            LIMIT 1
+            """,
+            (household_id,),
+        )
+        dataset_id = int(dataset_row["dataset_id"]) if dataset_row else None
+
+        conn.execute(
+            "UPDATE user_profiles SET household_id = NULL WHERE household_id = ?",
+            (household_id,),
+        )
+        conn.execute(
+            """
+            UPDATE household_registrations
+            SET household_id = NULL, updated_at = ?
+            WHERE household_id = ?
+            """,
+            (_utc_now(), household_id),
+        )
+        _delete_household_hourly(conn, household_id)
+        conn.execute("DELETE FROM households WHERE id = ?", (household_id,))
+
+        if dataset_id is not None:
+            _refresh_dataset_household_count(conn, dataset_id)
+
+    return {"deleted": True, "household_id": household_id}
+
+
+def _reseed_demo_barangay_households(conn, barangay_id: int, barangay_code: str) -> dict[str, Any]:
+    from merged_dataset_loader import BATTERY_CAPACITY_KWH, expand_to_household_rows
+
+    now = _utc_now()
+    dataset_row = fetchone(
+        conn,
+        "SELECT id FROM datasets WHERE is_active = 1 ORDER BY id DESC LIMIT 1",
+    )
+    if not dataset_row:
+        raise RuntimeError("No active dataset — run seed_db.py first.")
+    dataset_id = int(dataset_row["id"])
+
+    expanded = expand_to_household_rows()
+    if not expanded:
+        raise RuntimeError("Could not load rural Davao dataset.")
+
+    household_ids = sorted({row["household_id"] for row in expanded})
+    hourly_count = 0
+    for hid in household_ids:
+        sample = next(r for r in expanded if r["household_id"] == hid)
+        circuit = CIRCUIT_MAP.get(hid, {})
+        h_idx = int(hid.split("-")[-1]) - 1
+        hh_code = f"{barangay_code}-H{hid.split('-')[-1]}"
+        conn.execute(
+            """
+            INSERT INTO households
+            (id, barangay_id, head_name, purok, address, has_solar, has_battery,
+             battery_capacity_kwh, income_tier, status, circuit_key, circuit_name,
+             household_code, claimable, registered_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, 1, ?)
+            """,
+            (
+                hid,
+                barangay_id,
+                sample["head_name"],
+                sample["purok"],
+                f"Circuit {chr(65 + (h_idx % 2))} · {sample['purok']}",
+                int(circuit.get("has_solar", True)),
+                int(sample.get("has_battery", "1") == "1"),
+                BATTERY_CAPACITY_KWH,
+                sample.get("income_tier", "mid"),
+                circuit.get("circuit_key"),
+                circuit.get("circuit_name"),
+                hh_code,
+                now,
+            ),
+        )
+
+    for row in expanded:
+        conn.execute(
+            """
+            INSERT INTO hourly_energy_records
+            (dataset_id, household_id, hour, load_kwh, solar_kwh, net_load_kwh,
+             battery_soc_pct, grid_import_kwh, grid_export_kwh, tou_period, tou_rate_php)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                dataset_id,
+                row["household_id"],
+                int(row["hour"]),
+                float(row["load_kwh"]),
+                float(row["solar_kwh"]),
+                float(row["net_load_kwh"]),
+                float(row.get("battery_soc_pct") or 0),
+                float(row["grid_import_kwh"]),
+                float(row["grid_export_kwh"]),
+                row.get("tou_period") or "",
+                float(row["tou_rate_php"]) if row.get("tou_rate_php") else None,
+            ),
+        )
+        hourly_count += 1
+
+    _refresh_dataset_household_count(conn, dataset_id)
+    return {
+        "households": len(household_ids),
+        "hourly_records": hourly_count,
+        "dataset_id": dataset_id,
+    }
+
+
+def reset_barangay_mock_data(barangay_id: int, barangay_code: str) -> dict[str, Any]:
+    """Remove all households for a barangay and restore the original 15 mock profiles."""
+    demo_code = "SK-MABINI-DEMO"
+
+    with db_connection() as conn:
+        hids = [
+            r["id"]
+            for r in fetchall(
+                conn,
+                "SELECT id FROM households WHERE barangay_id = ?",
+                (barangay_id,),
+            )
+        ]
+
+        for hid in hids:
+            conn.execute(
+                "UPDATE user_profiles SET household_id = NULL WHERE household_id = ?",
+                (hid,),
+            )
+            conn.execute(
+                """
+                UPDATE household_registrations
+                SET household_id = NULL, updated_at = ?
+                WHERE household_id = ?
+                """,
+                (_utc_now(), hid),
+            )
+
+        conn.execute(
+            """
+            DELETE FROM hourly_energy_records
+            WHERE household_id IN (SELECT id FROM households WHERE barangay_id = ?)
+            """,
+            (barangay_id,),
+        )
+        conn.execute("DELETE FROM households WHERE barangay_id = ?", (barangay_id,))
+
+        if barangay_code == demo_code:
+            result = _reseed_demo_barangay_households(conn, barangay_id, barangay_code)
+        else:
+            result = _seed_virtual_hub(
+                conn,
+                barangay_id=barangay_id,
+                barangay_code=barangay_code,
+                dataset_suffix=f"reset_{barangay_id}",
+            )
+
+    return {
+        "reset": True,
+        "barangay_id": barangay_id,
+        "barangay_code": barangay_code,
+        **result,
+    }
 
 
 def get_household(household_id: str) -> dict | None:
@@ -1498,6 +1879,13 @@ def approve_registration(
                     _generate_household_code(str(bg_code)),
                     now,
                 ),
+            )
+            attach_mock_hourly_for_household(
+                household_id,
+                reg["display_name"],
+                purok=reg.get("purok") or "Purok 1",
+                has_battery=bool(reg["has_battery"]),
+                barangay_id=barangay_id,
             )
 
         conn.execute(

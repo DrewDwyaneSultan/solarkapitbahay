@@ -486,3 +486,56 @@ def get_mqtt_status() -> dict[str, Any]:
             "configured": cfg["configured"],
             "mode": "vercel_poll" if _is_vercel() else "background",
         }
+
+
+def _normalize_house_code(value: str) -> str:
+    v = value.strip().upper()
+    if v in ("A", "HOUSE A", "HOUSE_A"):
+        return "A"
+    if v in ("B", "HOUSE B", "HOUSE_B"):
+        return "B"
+    return v[:1]
+
+
+def publish_manual_transfer(from_house: str, to_house: str, watts: int) -> dict[str, Any]:
+    """
+    Publish operator manual transfer to MQTT.
+
+    Firmware must subscribe to solar/command/transfer (not yet in House_A/B.ino).
+    """
+    import json
+
+    cfg = _broker_config()
+    if not cfg["configured"]:
+        return {"published": False, "reason": "mqtt_broker_not_configured"}
+    if mqtt is None:
+        return {"published": False, "reason": "paho_mqtt_not_installed"}
+
+    from_code = _normalize_house_code(from_house)
+    to_code = _normalize_house_code(to_house)
+    if from_code == to_code:
+        return {"published": False, "reason": "from_and_to_must_differ"}
+
+    topic = "solar/command/transfer"
+    payload = json.dumps({"from": from_code, "to": to_code, "watts": int(watts)})
+
+    client_id = f"skb-api-cmd-{int(time.time())}"
+    client = _build_client(client_id)
+    _configure_client(client, cfg)
+
+    try:
+        client.connect(cfg["host"], cfg["port"], keepalive=30)
+        client.loop_start()
+        result = client.publish(topic, payload, qos=1, retain=False)
+        result.wait_for_publish(timeout=3.0)
+        client.loop_stop()
+        client.disconnect()
+        return {
+            "published": bool(result.rc == 0),
+            "topic": topic,
+            "payload": payload,
+            "broker": f"{cfg['host']}:{cfg['port']}",
+            "note": "House A/B firmware must subscribe to this topic to act on the command.",
+        }
+    except Exception as exc:
+        return {"published": False, "reason": str(exc), "topic": topic}

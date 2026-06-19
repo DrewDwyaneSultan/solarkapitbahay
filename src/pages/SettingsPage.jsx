@@ -3,7 +3,7 @@ import Card from '../components/ui/Card';
 import Toggle from '../components/ui/Toggle';
 import { fetchMqttStatus } from '../services/liveApi';
 
-const DEFAULT_BROKER = '192.168.55.113';
+const DEFAULT_BROKER = '10.211.242.244';
 
 export default function SettingsPage() {
   const [barangayName, setBarangayName] = useState('Barangay Mabini');

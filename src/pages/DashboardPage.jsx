@@ -169,8 +169,9 @@ export default function DashboardPage({ operatorName = 'Barangay Operator' }) {
           </span>
         </div>
         <p className="text-xs text-sk-ink-muted mb-4">
-          Gray dots: K-means on merged dataset (15 households). Pulsing dots: live MQTT from your
-          ESP32s — charge / discharge / balanced from SURPLUS/DEFICIT and solar watts.
+          Gray dots: K-means on merged dataset ({clusterData?.households?.length ?? 15} households).
+          Pulsing dots: live MQTT from your ESP32s — charge / discharge / balanced from
+          SURPLUS/DEFICIT and solar watts.
         </p>
         {clusterError && (
           <p className="text-sm text-rose-800 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 mb-3">
